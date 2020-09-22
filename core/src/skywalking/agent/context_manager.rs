@@ -11,126 +11,116 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use lazy_static::lazy_static;
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
-use std::rc::Rc;
-
-use lazy_static::lazy_static;
+use tokio::task_local;
 
 use crate::skywalking::agent::reporter::Reporter;
-use crate::skywalking::core::{Context, ContextListener, Extractable, Injectable, Span, TracingContext};
-use crate::skywalking::core::span::TracingSpan;
+use crate::skywalking::core::{
+    Context, ContextListener, Extractable, Injectable, Span, TracingContext,
+};
+use std::future::Future;
 
-/// Thread Local tracing context. Host the context and propagate it in each thread if needed.
-thread_local!( static CTX: RefCell<CurrentTracingContext> = RefCell::new(CurrentTracingContext::new()));
-/// Global reporter
-/// Status: WIP
+task_local! {
+    static CTX: RefCell<Box<CurrentTracingContext>>;
+}
+
 lazy_static! {
-    static ref SKYWALKING_REPORTER : Reporter = {
-        Reporter::new()
-    };
+    static ref SKYWALKING_REPORTER: Reporter = { Reporter::new() };
 }
 
 pub struct ContextManager {}
 
 impl ContextManager {
-    /// Run a closure under an entry span observing.
-    /// Span is automatically created, started and ended around the closure f.
-    pub fn tracing_entry<F>(operation_name: &str, extractor: Option<&dyn Extractable>, f: F)
-        where F: FnOnce(&mut Box<dyn Span>) {
-        CTX.with(|context| {
-            let span;
+    // create a span and return a span, the span is start automatically
+    // you need manually start this span
+    pub fn tracing_entry(
+        operation_name: &str,
+        extractor: Option<&dyn Extractable>,
+    ) -> Option<Box<dyn Span + Send>> {
+        return CTX.with(|context| {
+            let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
                 let mut mut_context = context.borrow_mut();
                 let parent_span_id = mut_context.parent_span_id();
                 span = mut_context.create_entry_span(operation_name, parent_span_id, extractor);
             }
-            match span {
-                None => {}
-                Some(mut s) => {
-                    s.start();
-                    f(s.borrow_mut());
-                    s.end();
-
-                    let is_first_span = s.span_id() == 0;
-                    let mut mut_context = context.borrow_mut();
-                    mut_context.finish_span(s);
-
-                    if is_first_span {
-                        mut_context.finish();
-                    }
-                }
-            };
+            if let Some(s) = span.as_mut() {
+                s.start();
+            }
+            span
         });
     }
 
-    /// Run a closure under an exit span observing.
-    /// Span is automatically created, started and ended around the closure f.
-    pub fn tracing_exit<F>(operation_name: &str, peer: &str, injector: Option<&dyn Injectable>, f: F)
-        where F: FnOnce(&mut Box<dyn Span>) {
+    // end a span and finish a span
+    pub fn finish_span(span: Option<Box<dyn Span + Send>>) {
         CTX.with(|context| {
-            let span;
+            if let Some(mut span) = span {
+                span.end();
+                let is_first_span = span.span_id() == 0;
+                let mut mut_context = context.borrow_mut();
+                mut_context.finish_span(span);
+
+                if is_first_span {
+                    mut_context.finish();
+                }
+            }
+        });
+    }
+
+    // create exit span
+    // span is automatically started
+    pub fn tracing_exit<F>(
+        operation_name: &str,
+        peer: &str,
+        injector: Option<&dyn Injectable>,
+    ) -> Option<Box<dyn Span + Send>> {
+        return CTX.with(|context| {
+            let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
                 let mut mut_context = context.borrow_mut();
                 let parent_span_id = mut_context.parent_span_id();
                 span = mut_context.create_exit_span(operation_name, parent_span_id, peer, injector);
             }
-            match span {
-                None => {}
-                Some(mut s) => {
-                    s.start();
-                    f(s.borrow_mut());
-                    s.end();
-
-                    let is_first_span = s.span_id() == 0;
-
-                    let mut mut_context = context.borrow_mut();
-                    mut_context.finish_span(s);
-
-                    if is_first_span {
-                        mut_context.finish();
-                    }
-                }
-            };
+            if let Some(s) = span.as_mut() {
+                s.start();
+            }
+            span
         });
     }
 
-    /// Run a closure under a local span observing.
-    /// Span is automatically created, started and ended around the closure f.
-    pub fn tracing_local<F>(operation_name: &str, f: F)
-        where F: FnOnce(&mut Box<dyn Span>) {
-        CTX.with(|context| {
-            let span;
+    // create local span
+    // span is automatically started
+    pub fn tracing_local<F>(operation_name: &str) -> Option<Box<dyn Span + Send>> {
+        return CTX.with(|context| {
+            let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
                 let mut mut_context = context.borrow_mut();
                 let parent_span_id = mut_context.parent_span_id();
                 span = mut_context.create_local(operation_name, parent_span_id);
             }
-            match span {
-                None => {}
-                Some(mut s) => {
-                    s.start();
-                    f(s.borrow_mut());
-                    s.end();
-
-                    let is_first_span = s.span_id() == 0;
-
-                    let mut mut_context = context.borrow_mut();
-                    mut_context.finish_span(s);
-
-                    if is_first_span {
-                        mut_context.finish();
-                    }
-                }
-            };
+            if let Some(s) = span.as_mut() {
+                s.start();
+            }
+            span
         });
+    }
+
+    // when first time enter into skywalking async enviroment, call this method
+    pub fn async_enter<T, F>(f: F) -> impl Future<Output = T>
+    where
+        F: Future<Output = T>,
+    {
+        let tracing_ctx = CurrentTracingContext::new();
+        CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
     }
 }
 
-struct CurrentTracingContext {
+pub struct CurrentTracingContext {
     option: Option<Box<WorkingContext>>,
 }
 
@@ -141,26 +131,31 @@ struct WorkingContext {
 
 impl CurrentTracingContext {
     /// Create the tracing context in the thread local at the first time.
-    fn new() -> Self {
+    pub fn new() -> Self {
         CurrentTracingContext {
             option: match TracingContext::new(SKYWALKING_REPORTER.service_instance_id()) {
-                Some(tx) => {
-                    Some(Box::new(WorkingContext {
-                        context: Box::new(tx),
-                        span_stack: Vec::new(),
-                    }))
-                }
-                None => { None }
+                Some(tx) => Some(Box::new(WorkingContext {
+                    context: Box::new(tx),
+                    span_stack: Vec::new(),
+                })),
+                None => None,
             },
         }
     }
 
     /// Delegate to the tracing core entry span creation method, if current context is valid.
-    fn create_entry_span(&mut self, operation_name: &str, parent_span_id: Option<i32>, extractor: Option<&dyn Extractable>) -> Option<Box<dyn Span>> {
+    fn create_entry_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+        extractor: Option<&dyn Extractable>,
+    ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
-            None => { None }
+            None => None,
             Some(wx) => {
-                let span = wx.context.create_entry_span(operation_name, parent_span_id, extractor);
+                let span = wx
+                    .context
+                    .create_entry_span(operation_name, parent_span_id, extractor);
                 wx.span_stack.push(span.span_id());
                 Some(span)
             }
@@ -168,11 +163,19 @@ impl CurrentTracingContext {
     }
 
     /// Delegate to the tracing core exit span creation method, if current context is valid.
-    fn create_exit_span(&mut self, operation_name: &str, parent_span_id: Option<i32>, peer: &str, injector: Option<&dyn Injectable>) -> Option<Box<dyn Span>> {
+    fn create_exit_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+        peer: &str,
+        injector: Option<&dyn Injectable>,
+    ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
-            None => { None }
+            None => None,
             Some(wx) => {
-                let span = wx.context.create_exit_span(operation_name, parent_span_id, peer, injector);
+                let span =
+                    wx.context
+                        .create_exit_span(operation_name, parent_span_id, peer, injector);
                 wx.span_stack.push(span.span_id());
                 Some(span)
             }
@@ -180,9 +183,13 @@ impl CurrentTracingContext {
     }
 
     /// Delegate to the tracing core local span creation method, if current context is valid.
-    fn create_local(&mut self, operation_name: &str, parent_span_id: Option<i32>) -> Option<Box<dyn Span>> {
+    fn create_local(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+    ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
-            None => { None }
+            None => None,
             Some(wx) => {
                 let span = wx.context.create_local_span(operation_name, parent_span_id);
                 wx.span_stack.push(span.span_id());
@@ -192,7 +199,7 @@ impl CurrentTracingContext {
     }
 
     /// Delegate to the tracing core span finish method, if current context is valid.
-    fn finish_span(&mut self, span: Box<dyn Span>) {
+    fn finish_span(&mut self, span: Box<dyn Span + Send>) {
         match self.option.borrow_mut() {
             None => {}
             Some(wx) => {
@@ -206,13 +213,11 @@ impl CurrentTracingContext {
     /// The span id(s) are saved in the span_stack by following as same the stack-style as span creation sequence.
     fn parent_span_id(&self) -> Option<i32> {
         match self.option.borrow() {
-            None => { None }
-            Some(wx) => {
-                match wx.span_stack.last() {
-                    None => { None }
-                    Some(span_id) => { Some(span_id.clone()) }
-                }
-            }
+            None => None,
+            Some(wx) => match wx.span_stack.last() {
+                None => None,
+                Some(span_id) => Some(span_id.clone()),
+            },
         }
     }
 
@@ -234,24 +239,41 @@ impl CurrentTracingContext {
     }
 }
 
-
 #[cfg(test)]
 mod context_tests {
     use crate::skywalking::agent::context_manager::*;
     use crate::skywalking::core::{ContextListener, Tag, TracingContext};
+    use env_logger::Env;
+    use tokio::runtime::Runtime;
 
     #[test]
     fn test_context_manager() {
-        ContextManager::tracing_entry("op1", None, |mut span| {
-            span.tag(Tag::new(String::from("tag1"), String::from("value1")));
+        // env_logger::from_env(Env::default().default_filter_or("info")).init();
 
-            ContextManager::tracing_exit("op2", "127.0.0.1:8080", None, |mut span| {
-                span.set_component_id(33);
-            });
-
-            ContextManager::tracing_local("op3", |mut span| {});
-        });
+        // let mut run = Runtime::new().unwrap();
+        // run.block_on(async {
+        //     ContextManager::async_enter(execute()).await;
+        // });
     }
+
+    // async fn execute() {
+    //     ContextManager::tracing_entry("op1", None, |mut span| {
+    //         span.tag(Tag::new(String::from("tag1"), String::from("value1")));
+    //         for tag in &span.tags() {
+    //             println!("key:{}, value:{}", tag.key(), tag.value());
+    //         }
+    //         println!("spanId:{}", span.span_id());
+    //         ContextManager::tracing_exit("op2", "127.0.0.1:8080", None, |mut span| {
+    //             for tag in &span.tags() {
+    //                 println!("key:{}, value:{}", tag.key(), tag.value());
+    //             }
+    //             println!("spanId:{}", span.span_id());
+    //             span.set_component_id(33);
+    //         });
+
+    //         ContextManager::tracing_local("op3", |mut span| {});
+    //     });
+    // }
 
     struct MockReporter {}
 
@@ -260,6 +282,11 @@ mod context_tests {
             Some(1)
         }
 
-        fn report_trace(&self, finished_context: Box<TracingContext>) {}
+        fn report_trace(&self, finished_context: Box<TracingContext>) {
+            println!(
+                "finally finished span is:{:?}",
+                finished_context.finished_spans
+            );
+        }
     }
 }

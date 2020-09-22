@@ -16,24 +16,39 @@
 use base64::{decode, encode};
 
 use crate::skywalking::agent::reporter::Reporter;
-use crate::skywalking::core::{ID, Span};
 use crate::skywalking::core::context_carrier::{Extractable, Injectable};
 use crate::skywalking::core::id::IDGenerator;
 use crate::skywalking::core::segment_ref::SegmentRef;
 use crate::skywalking::core::span::TracingSpan;
+use crate::skywalking::core::{Span, ID};
 
 /// Context represents the context of a tracing process.
 /// All new span belonging to this tracing context should be created through this context.
 pub trait Context {
     /// Create an entry span belonging this context
-    fn create_entry_span(&mut self, operation_name: &str, parent_span_id: Option<i32>, extractor: Option<&dyn Extractable>) -> Box<dyn Span>;
+    fn create_entry_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+        extractor: Option<&dyn Extractable>,
+    ) -> Box<dyn Span + Send>;
     /// Create an exit span belonging this context
-    fn create_exit_span(&mut self, operation_name: &str, parent_span_id: Option<i32>, peer: &str, injector: Option<&dyn Injectable>) -> Box<dyn Span>;
+    fn create_exit_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+        peer: &str,
+        injector: Option<&dyn Injectable>,
+    ) -> Box<dyn Span + Send>;
     /// Create an local span belonging this context
-    fn create_local_span(&mut self, operation_name: &str, parent_span_id: Option<i32>) -> Box<dyn Span>;
+    fn create_local_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+    ) -> Box<dyn Span + Send>;
     /// Finish the given span. The span is only being accept if it belongs to this context.
     /// Return err if the span was created by another context.
-    fn finish_span(&mut self, span: Box<dyn Span>);
+    fn finish_span(&mut self, span: Box<dyn Span + Send>);
 }
 
 pub struct TracingContext {
@@ -47,27 +62,24 @@ pub struct TracingContext {
     first_ref: Option<SegmentRef>,
     service_instance_id: i32,
 
-    finished_spans: Vec<Box<dyn Span>>,
+    pub finished_spans: Vec<Box<dyn Span + Send>>,
 }
 
 impl TracingContext {
     /// Create a new instance
     pub fn new(service_instance_id: Option<i32>) -> Option<TracingContext> {
         match service_instance_id {
-            None => { None }
-            Some(id) => {
-                Some(TracingContext {
-                    next_seq: -1,
-                    primary_trace_id: IDGenerator::new_id(id),
-                    segment_id: IDGenerator::new_id(id),
-                    self_generated_id: true,
-                    entry_endpoint_name: None,
-                    first_ref: None,
-                    service_instance_id: id,
-                    finished_spans: Vec::new(),
-                }
-                )
-            }
+            None => None,
+            Some(id) => Some(TracingContext {
+                next_seq: -1,
+                primary_trace_id: IDGenerator::new_id(id),
+                segment_id: IDGenerator::new_id(id),
+                self_generated_id: true,
+                entry_endpoint_name: None,
+                first_ref: None,
+                service_instance_id: id,
+                finished_spans: Vec::new(),
+            }),
         }
     }
 
@@ -100,11 +112,20 @@ impl TracingContext {
 
 /// Default implementation of Context
 impl Context for TracingContext {
-    fn create_entry_span(&mut self, operation_name: &str, parent_span_id: Option<i32>, extractor: Option<&dyn Extractable>) -> Box<dyn Span> {
-        let mut entry_span = TracingSpan::new_entry_span(operation_name, self.next_span_id(), match parent_span_id {
-            None => { -1 }
-            Some(s) => { s }
-        });
+    fn create_entry_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+        extractor: Option<&dyn Extractable>,
+    ) -> Box<dyn Span + Send> {
+        let mut entry_span = TracingSpan::new_entry_span(
+            operation_name,
+            self.next_span_id(),
+            match parent_span_id {
+                None => -1,
+                Some(s) => s,
+            },
+        );
 
         if extractor.is_some() {
             match SegmentRef::from_text(extractor.unwrap().extract("sw6".to_string())) {
@@ -125,27 +146,49 @@ impl Context for TracingContext {
         Box::new(entry_span)
     }
 
-    fn create_exit_span(&mut self, operation_name: &str, parent_span_id: Option<i32>, peer: &str, injector: Option<&dyn Injectable>) -> Box<dyn Span> {
-        let exit_span = TracingSpan::new_exit_span(operation_name, self.next_span_id(), match parent_span_id {
-            None => { -1 }
-            Some(s) => { s }
-        }, peer);
+    fn create_exit_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+        peer: &str,
+        injector: Option<&dyn Injectable>,
+    ) -> Box<dyn Span + Send> {
+        let exit_span = TracingSpan::new_exit_span(
+            operation_name,
+            self.next_span_id(),
+            match parent_span_id {
+                None => -1,
+                Some(s) => s,
+            },
+            peer,
+        );
 
         if injector.is_some() {
-            injector.unwrap().inject(String::from("sw6"), SegmentRef::for_across_process(self, &exit_span, &peer).serialize());
+            injector.unwrap().inject(
+                String::from("sw6"),
+                SegmentRef::for_across_process(self, &exit_span, &peer).serialize(),
+            );
         }
 
         Box::new(exit_span)
     }
 
-    fn create_local_span(&mut self, operation_name: &str, parent_span_id: Option<i32>) -> Box<dyn Span> {
-        Box::new(TracingSpan::new_local_span(operation_name, self.next_span_id(), match parent_span_id {
-            None => { -1 }
-            Some(s) => { s }
-        }))
+    fn create_local_span(
+        &mut self,
+        operation_name: &str,
+        parent_span_id: Option<i32>,
+    ) -> Box<dyn Span + Send> {
+        Box::new(TracingSpan::new_local_span(
+            operation_name,
+            self.next_span_id(),
+            match parent_span_id {
+                None => -1,
+                Some(s) => s,
+            },
+        ))
     }
 
-    fn finish_span(&mut self, mut span: Box<dyn Span>) {
+    fn finish_span(&mut self, mut span: Box<dyn Span + Send>) {
         if !span.is_ended() {
             span.end();
         }
@@ -158,7 +201,9 @@ mod context_tests {
     use std::sync::mpsc;
     use std::sync::mpsc::{Receiver, Sender};
 
-    use crate::skywalking::core::{Context, ContextListener, Extractable, ID, Injectable, Tag, TracingContext};
+    use crate::skywalking::core::{
+        Context, ContextListener, Extractable, Injectable, Tag, TracingContext, ID,
+    };
 
     #[test]
     fn test_context_stack() {
@@ -171,7 +216,12 @@ mod context_tests {
             span2.tag(Tag::new(String::from("tag1"), String::from("value1")));
             {
                 assert_eq!(span2.span_id(), 1);
-                let span3 = context.create_exit_span("op3", Some(span2.span_id()), "127.0.0.1:8080", Some(&HeaderCarrier {}));
+                let span3 = context.create_exit_span(
+                    "op3",
+                    Some(span2.span_id()),
+                    "127.0.0.1:8080",
+                    Some(&HeaderCarrier {}),
+                );
                 assert_eq!(span3.span_id(), 2);
 
                 context.finish_span(span3);

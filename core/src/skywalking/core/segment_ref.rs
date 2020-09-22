@@ -15,8 +15,8 @@
 
 use std::os::raw::c_long;
 
-use crate::skywalking::core::{ID, Span, TracingContext};
 use crate::skywalking::core::segment_ref::SegmentRefType::CROSS_PROCESS;
+use crate::skywalking::core::{Span, TracingContext, ID};
 
 #[derive(Clone, Hash)]
 pub struct SegmentRef {
@@ -46,38 +46,57 @@ impl SegmentRef {
         if strings.len() == 9 {
             // Ignore string[0].
             let trace_id = match SegmentRef::string_to_id(strings[1]) {
-                Some(id) => { id }
-                _ => { return None; }
+                Some(id) => id,
+                _ => {
+                    return None;
+                }
             };
             let segment_id = match SegmentRef::string_to_id(strings[2]) {
-                Some(id) => { id }
-                _ => { return None; }
+                Some(id) => id,
+                _ => {
+                    return None;
+                }
             };
             let span_id = match strings[3].parse::<i32>() {
-                Ok(id) => { id }
-                _ => { return None; }
+                Ok(id) => id,
+                _ => {
+                    return None;
+                }
             };
             let parent_service_instance_id = match strings[4].parse::<i32>() {
-                Ok(id) => { id }
-                _ => { return None; }
+                Ok(id) => id,
+                _ => {
+                    return None;
+                }
             };
             let entry_service_instance_id = match strings[5].parse::<i32>() {
-                Ok(id) => { id }
-                _ => { return None; }
+                Ok(id) => id,
+                _ => {
+                    return None;
+                }
             };
 
-            let (network_address, network_address_id) = match SegmentRef::decode_base64_to_string_or_id(strings[6]) {
-                Some(decoded) => { decoded }
-                _ => { return None; }
-            };
-            let (entry_endpoint, entry_endpoint_id) = match SegmentRef::decode_base64_to_string_or_id(strings[7]) {
-                Some(decoded) => { decoded }
-                _ => { return None; }
-            };
-            let (parent_endpoint, parent_endpoint_id) = match SegmentRef::decode_base64_to_string_or_id(strings[8]) {
-                Some(decoded) => { decoded }
-                _ => { return None; }
-            };
+            let (network_address, network_address_id) =
+                match SegmentRef::decode_base64_to_string_or_id(strings[6]) {
+                    Some(decoded) => decoded,
+                    _ => {
+                        return None;
+                    }
+                };
+            let (entry_endpoint, entry_endpoint_id) =
+                match SegmentRef::decode_base64_to_string_or_id(strings[7]) {
+                    Some(decoded) => decoded,
+                    _ => {
+                        return None;
+                    }
+                };
+            let (parent_endpoint, parent_endpoint_id) =
+                match SegmentRef::decode_base64_to_string_or_id(strings[8]) {
+                    Some(decoded) => decoded,
+                    _ => {
+                        return None;
+                    }
+                };
 
             Some(SegmentRef {
                 ref_type: CROSS_PROCESS,
@@ -102,22 +121,18 @@ impl SegmentRef {
         // -1 represent the object doesn't exist.
         let inexistence = -1;
         let (entry_endpoint, entry_endpoint_id) = match context.first_ref() {
-            None => {
-                match context.entry_endpoint_name() {
-                    None => { (None, inexistence) }
-                    Some(endpoint) => { (Some(endpoint.clone()), 0) }
-                }
-            }
-            Some(reference) => {
-                match &reference.entry_endpoint {
-                    None => { (None, reference.entry_endpoint_id) }
-                    Some(endpoint) => { (Some(endpoint.clone()), 0) }
-                }
-            }
+            None => match context.entry_endpoint_name() {
+                None => (None, inexistence),
+                Some(endpoint) => (Some(endpoint.clone()), 0),
+            },
+            Some(reference) => match &reference.entry_endpoint {
+                None => (None, reference.entry_endpoint_id),
+                Some(endpoint) => (Some(endpoint.clone()), 0),
+            },
         };
         let (parent_endpoint, parent_endpoint_id) = match context.entry_endpoint_name() {
-            None => { (None, inexistence) }
-            Some(endpoint) => { (Some(endpoint.clone()), 0) }
+            None => (None, inexistence),
+            Some(endpoint) => (Some(endpoint.clone()), 0),
         };
 
         SegmentRef {
@@ -130,8 +145,8 @@ impl SegmentRef {
             network_address_id: 0,
             entry_service_instance_id: {
                 match context.first_ref() {
-                    None => { context.service_instance_id() }
-                    Some(reference) => { reference.entry_service_instance_id }
+                    None => context.service_instance_id(),
+                    Some(reference) => reference.entry_service_instance_id,
                 }
             },
             parent_service_instance_id: context.service_instance_id(),
@@ -150,9 +165,15 @@ impl SegmentRef {
             self.span_id.to_string(),
             self.parent_service_instance_id.to_string(),
             self.entry_service_instance_id.to_string(),
-            SegmentRef::string_or_id_to_encode_base64(&self.network_address, self.network_address_id),
+            SegmentRef::string_or_id_to_encode_base64(
+                &self.network_address,
+                self.network_address_id,
+            ),
             SegmentRef::string_or_id_to_encode_base64(&self.entry_endpoint, self.entry_endpoint_id),
-            SegmentRef::string_or_id_to_encode_base64(&self.parent_endpoint, self.parent_endpoint_id),
+            SegmentRef::string_or_id_to_encode_base64(
+                &self.parent_endpoint,
+                self.parent_endpoint_id,
+            ),
         ];
         parts.join("-")
     }
@@ -163,63 +184,63 @@ impl SegmentRef {
 
     fn string_to_id(text: &str) -> Option<ID> {
         match base64::decode(text) {
-            Ok(value) => {
-                match String::from_utf8(value) {
-                    Ok(str) => {
-                        match ID::from(str) {
-                            Ok(id) => { Some(id) }
-                            _ => None
-                        }
-                    }
-                    _ => { None }
-                }
-            }
-            _ => { None }
+            Ok(value) => match String::from_utf8(value) {
+                Ok(str) => match ID::from(str) {
+                    Ok(id) => Some(id),
+                    _ => None,
+                },
+                _ => None,
+            },
+            _ => None,
         }
     }
 
     fn decode_base64_to_string_or_id(text: &str) -> Option<(Option<String>, i32)> {
         match base64::decode(text) {
-            Ok(value) => {
-                match String::from_utf8(value) {
-                    Ok(str) => {
-                        if str.starts_with("#") {
-                            let network: Vec<&str> = str.split("#").collect();
-                            (Some((Some(network[1].to_string()), 0)))
-                        } else {
-                            match str.parse::<i32>() {
-                                Ok(id) => { Some((None, id)) }
-                                _ => { None }
-                            }
+            Ok(value) => match String::from_utf8(value) {
+                Ok(str) => {
+                    if str.starts_with("#") {
+                        let network: Vec<&str> = str.split("#").collect();
+                        (Some((Some(network[1].to_string()), 0)))
+                    } else {
+                        match str.parse::<i32>() {
+                            Ok(id) => Some((None, id)),
+                            _ => None,
                         }
                     }
-                    _ => { None }
                 }
-            }
-            _ => { None }
+                _ => None,
+            },
+            _ => None,
         }
     }
 
     fn string_or_id_to_encode_base64(text: &Option<String>, id: i32) -> String {
-        base64::encode(match text {
-            None => { id.to_string() }
-            Some(t) => {
-                let mut network = "#".to_string();
-                network.push_str(&t);
-                network
+        base64::encode(
+            match text {
+                None => id.to_string(),
+                Some(t) => {
+                    let mut network = "#".to_string();
+                    network.push_str(&t);
+                    network
+                }
             }
-        }.as_bytes())
+            .as_bytes(),
+        )
     }
 }
 
 #[cfg(test)]
 mod segment_ref_tests {
-    use crate::skywalking::core::ID;
     use crate::skywalking::core::segment_ref::SegmentRef;
+    use crate::skywalking::core::ID;
 
     #[test]
     fn test_deserialize_context_carrier() {
-        let carrier = SegmentRef::from_text("1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz").unwrap();
+        let carrier = SegmentRef::from_text(
+            "1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz",
+        )
+        .unwrap();
         assert_eq!(carrier.trace_id == ID::new(3, 4, 5), true);
         assert_eq!(carrier.segment_id == ID::new(1, 2, 3), true);
         assert_eq!(carrier.span_id, 4);
@@ -232,7 +253,10 @@ mod segment_ref_tests {
 
     #[test]
     fn test_serialize_ref() {
-        let carrier = SegmentRef::from_text("1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz").unwrap();
+        let carrier = SegmentRef::from_text(
+            "1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz",
+        )
+        .unwrap();
         assert_eq!(carrier.trace_id == ID::new(3, 4, 5), true);
         assert_eq!(carrier.segment_id == ID::new(1, 2, 3), true);
         assert_eq!(carrier.span_id, 4);
@@ -243,6 +267,9 @@ mod segment_ref_tests {
         assert_eq!(carrier.parent_endpoint_id, 123);
 
         let carrier_text = carrier.serialize();
-        assert_eq!(carrier_text, "1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz");
+        assert_eq!(
+            carrier_text,
+            "1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz"
+        );
     }
 }

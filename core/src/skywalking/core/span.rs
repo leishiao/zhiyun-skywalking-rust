@@ -18,6 +18,9 @@ use std::time::SystemTime;
 use crate::skywalking::core::log::LogEvent;
 use crate::skywalking::core::segment_ref::SegmentRef;
 use crate::skywalking::core::Tag;
+use std::fmt;
+use std::fmt::Debug;
+use std::fmt::Formatter;
 
 /// Span is one of the tracing concept, representing a time duration.
 ///Span is an important and common concept in distributed tracing system. Learn Span from Google Dapper Paper.
@@ -48,7 +51,6 @@ pub trait Span {
     /// End just means sealing the end time, still need to call Context::finish_span to officially finish span and archive it for further reporting.
     fn end_with_timestamp(&mut self, timestamp: SystemTime);
 
-
     /// All following are status reading methods.
 
     /// Return true if the span has been set end time
@@ -61,6 +63,21 @@ pub trait Span {
     fn span_id(&self) -> i32;
     /// Return the replicated existing tags.
     fn tags(&self) -> Vec<Tag>;
+    /// Return operation name
+    fn operation_name(&self) -> &str;
+    /// Return time info, tuple: (start_time, end_time)
+    fn time_info(&self) -> (u64, u64);
+}
+
+impl Debug for Box<dyn Span + Send> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.write_str(&format!(
+            "time:{:?}, tags:{:?}",
+            self.time_info(),
+            self.tags()
+        ));
+        Ok(())
+    }
 }
 
 pub struct TracingSpan {
@@ -98,7 +115,12 @@ impl TracingSpan {
     }
 
     /// Create a new exit span
-    pub fn new_exit_span(operation_name: &str, span_id: i32, parent_span_id: i32, peer: &str) -> TracingSpan {
+    pub fn new_exit_span(
+        operation_name: &str,
+        span_id: i32,
+        parent_span_id: i32,
+        peer: &str,
+    ) -> TracingSpan {
         let mut span = TracingSpan::_new(operation_name, span_id, parent_span_id);
         span.is_exit = true;
         span.peer = Some(String::from(peer));
@@ -138,14 +160,14 @@ impl TracingSpan {
 impl Span for TracingSpan {
     fn start(&mut self) {
         self.start_time = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-            Ok(n) => { n.as_millis() }
+            Ok(n) => n.as_millis(),
             Err(_) => self.start_time as u128,
         } as u64;
     }
 
     fn start_with_timestamp(&mut self, timestamp: SystemTime) {
         self.start_time = match timestamp.duration_since(SystemTime::UNIX_EPOCH) {
-            Ok(n) => { n.as_millis() }
+            Ok(n) => n.as_millis(),
             Err(_) => self.start_time as u128,
         } as u64;
     }
@@ -168,14 +190,14 @@ impl Span for TracingSpan {
 
     fn end(&mut self) {
         self.end_time = match SystemTime::now().duration_since(SystemTime::UNIX_EPOCH) {
-            Ok(n) => { n.as_millis() }
+            Ok(n) => n.as_millis(),
             Err(_) => self.start_time as u128,
         } as u64;
     }
 
     fn end_with_timestamp(&mut self, timestamp: SystemTime) {
         self.end_time = match timestamp.duration_since(SystemTime::UNIX_EPOCH) {
-            Ok(n) => { n.as_millis() }
+            Ok(n) => n.as_millis(),
             Err(_) => self.start_time as u128,
         } as u64;
     }
@@ -200,8 +222,16 @@ impl Span for TracingSpan {
         let mut tags = Vec::new();
         for t in &self.tags {
             tags.push(t.clone());
-        };
+        }
         tags
+    }
+
+    fn operation_name(&self) -> &str {
+        self.operation_name.as_str()
+    }
+
+    fn time_info(&self) -> (u64, u64) {
+        (self.start_time, self.end_time)
     }
 }
 
@@ -251,14 +281,14 @@ mod span_tests {
     fn test_span_with_logs() {
         let mut span = TracingSpan::_new("op1", 0, -1);
 
-        span.log(LogEvent::new(123, Box::new([
-            { EventField::new(String::from("event1"), String::from("event description")) },
-            { EventField::new(String::from("event2"), String::from("event description")) },
-        ])));
+        span.log(LogEvent::new(
+            123,
+            Box::new([
+                { EventField::new(String::from("event1"), String::from("event description")) },
+                { EventField::new(String::from("event2"), String::from("event description")) },
+            ]),
+        ));
 
         assert_eq!(span.logs.len(), 1);
     }
 }
-
-
-

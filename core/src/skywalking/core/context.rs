@@ -51,6 +51,7 @@ pub trait Context {
     fn finish_span(&mut self, span: Box<dyn Span + Send>);
 }
 
+#[derive(Debug)]
 pub struct TracingContext {
     /// Span id sequence. Indicate the number of created spans.
     next_seq: i32,

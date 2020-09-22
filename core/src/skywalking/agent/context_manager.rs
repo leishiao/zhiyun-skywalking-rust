@@ -60,10 +60,11 @@ impl ContextManager {
             if let Some(mut span) = span {
                 span.end();
                 let is_first_span = span.span_id() == 0;
+                println!("span_id:{}", span.span_id());
                 let mut mut_context = context.borrow_mut();
                 mut_context.finish_span(span);
-
                 if is_first_span {
+                    println!("执行了mut_context finish");
                     mut_context.finish();
                 }
             }
@@ -72,7 +73,7 @@ impl ContextManager {
 
     // create exit span
     // span is automatically started
-    pub fn tracing_exit<F>(
+    pub fn tracing_exit(
         operation_name: &str,
         peer: &str,
         injector: Option<&dyn Injectable>,
@@ -94,7 +95,7 @@ impl ContextManager {
 
     // create local span
     // span is automatically started
-    pub fn tracing_local<F>(operation_name: &str) -> Option<Box<dyn Span + Send>> {
+    pub fn tracing_local(operation_name: &str) -> Option<Box<dyn Span + Send>> {
         return CTX.with(|context| {
             let mut span;
             {
@@ -203,6 +204,10 @@ impl CurrentTracingContext {
         match self.option.borrow_mut() {
             None => {}
             Some(wx) => {
+                println!(
+                    "finish_span operation, current stack:{:?}",
+                    wx.context.finished_spans
+                );
                 wx.context.finish_span(span);
                 wx.span_stack.pop();
             }
@@ -229,7 +234,10 @@ impl CurrentTracingContext {
             None => {}
             Some(wx) => {
                 let tracingContext = &wx.context;
-
+                println!(
+                    "start to finish the context, current tracing_ctx:{:?}",
+                    tracingContext
+                );
                 wx.span_stack.clear();
 
                 // TODO: Transfer tracingContext to protobuf
@@ -248,32 +256,22 @@ mod context_tests {
 
     #[test]
     fn test_context_manager() {
-        // env_logger::from_env(Env::default().default_filter_or("info")).init();
+        env_logger::from_env(Env::default().default_filter_or("info")).init();
 
-        // let mut run = Runtime::new().unwrap();
-        // run.block_on(async {
-        //     ContextManager::async_enter(execute()).await;
-        // });
+        let mut run = Runtime::new().unwrap();
+        run.block_on(async {
+            ContextManager::async_enter(execute()).await;
+        });
     }
 
-    // async fn execute() {
-    //     ContextManager::tracing_entry("op1", None, |mut span| {
-    //         span.tag(Tag::new(String::from("tag1"), String::from("value1")));
-    //         for tag in &span.tags() {
-    //             println!("key:{}, value:{}", tag.key(), tag.value());
-    //         }
-    //         println!("spanId:{}", span.span_id());
-    //         ContextManager::tracing_exit("op2", "127.0.0.1:8080", None, |mut span| {
-    //             for tag in &span.tags() {
-    //                 println!("key:{}, value:{}", tag.key(), tag.value());
-    //             }
-    //             println!("spanId:{}", span.span_id());
-    //             span.set_component_id(33);
-    //         });
-
-    //         ContextManager::tracing_local("op3", |mut span| {});
-    //     });
-    // }
+    async fn execute() {
+        let span = ContextManager::tracing_entry("entry_span", None);
+        let local_span = ContextManager::tracing_local("local_span");
+        ContextManager::finish_span(local_span);
+        let exit_span = ContextManager::tracing_exit("operation_name", "peer_info", None);
+        ContextManager::finish_span(exit_span);
+        ContextManager::finish_span(span);
+    }
 
     struct MockReporter {}
 

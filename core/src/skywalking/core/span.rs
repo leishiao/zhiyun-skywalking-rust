@@ -71,10 +71,14 @@ pub trait Span {
 
 impl Debug for Box<dyn Span + Send> {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.write_str(&format!(
-            "time:{:?}, tags:{:?}",
+        let _ = f.write_str(&format!(
+            "operation_name:{},time:{:?}, tags:{:?}, is_ended:{}, is_exit:{}, is_entry:{}",
+            self.operation_name(),
             self.time_info(),
-            self.tags()
+            self.tags(),
+            self.is_ended(),
+            self.is_exit(),
+            self.is_entry()
         ));
         Ok(())
     }

@@ -29,14 +29,18 @@ impl IDGenerator {
         ID::new(
             instance_id as i64,
             rand::thread_rng().next_u64() as i64,
-            SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).ok().unwrap().as_millis() as i64,
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .ok()
+                .unwrap()
+                .as_millis() as i64,
         )
     }
 }
 
 /// ID is used for trace id and segment id.
 /// It is combined by 3 i64 numbers, and could be formatted as `part1.part2.part3` string.
-#[derive(Clone, Hash)]
+#[derive(Clone, Hash, Debug)]
 pub struct ID {
     part1: i64,
     part2: i64,
@@ -58,11 +62,17 @@ impl ID {
         let strings: Vec<&str> = id_text.split(".").collect();
         if strings.len() == 3 {
             let part1 = strings[0].parse::<i64>();
-            if part1.is_err() { return Err("part 1 is not a i64".to_string()); }
+            if part1.is_err() {
+                return Err("part 1 is not a i64".to_string());
+            }
             let part2 = strings[1].parse::<i64>();
-            if part2.is_err() { return Err("part 2 is not a i64".to_string()); }
+            if part2.is_err() {
+                return Err("part 2 is not a i64".to_string());
+            }
             let part3 = strings[2].parse::<i64>();
-            if part3.is_err() { return Err("part 3 is not a i64".to_string()); }
+            if part3.is_err() {
+                return Err("part 3 is not a i64".to_string());
+            }
             Ok(ID::new(part1.unwrap(), part2.unwrap(), part3.unwrap()))
         } else {
             Err("The ID is not combined by 3 parts.".to_string())
@@ -82,11 +92,10 @@ impl ToString for ID {
     }
 }
 
-
 #[cfg(test)]
 mod id_tests {
-    use crate::skywalking::core::ID;
     use crate::skywalking::core::id::IDGenerator;
+    use crate::skywalking::core::ID;
 
     #[test]
     fn test_id_generator() {

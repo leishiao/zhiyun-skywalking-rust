@@ -18,7 +18,7 @@ use std::os::raw::c_long;
 use crate::skywalking::core::segment_ref::SegmentRefType::CROSS_PROCESS;
 use crate::skywalking::core::{Span, TracingContext, ID};
 
-#[derive(Clone, Hash)]
+#[derive(Clone, Hash, Debug)]
 pub struct SegmentRef {
     ref_type: SegmentRefType,
     trace_id: ID,
@@ -34,7 +34,7 @@ pub struct SegmentRef {
     parent_endpoint_id: i32,
 }
 
-#[derive(Clone, Hash)]
+#[derive(Clone, Hash, Debug)]
 enum SegmentRefType {
     CROSS_PROCESS,
     CROSS_THREAD,

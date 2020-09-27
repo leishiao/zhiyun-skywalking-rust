@@ -16,12 +16,14 @@
 /// Log represents an event happened during the span duration.
 /// It is much heavier than tag. Usually this is only used in the error case to log the detailed error message.
 /// Log Entity is a creation once object. Can't be change once it is created.
+#[derive(Clone)]
 pub struct LogEvent {
     timestamp: i64,
     /// Any extra fields to describe the event.
     fields: Box<[EventField]>,
 }
 
+#[derive(Clone)]
 pub struct EventField {
     name: String,
     value: String,
@@ -29,19 +31,13 @@ pub struct EventField {
 
 impl LogEvent {
     pub fn new(timestamp: i64, fields: Box<[EventField]>) -> Self {
-        LogEvent {
-            timestamp,
-            fields,
-        }
+        LogEvent { timestamp, fields }
     }
 }
 
 impl EventField {
     pub fn new(name: String, value: String) -> Self {
-        EventField {
-            name,
-            value,
-        }
+        EventField { name, value }
     }
 }
 
@@ -62,4 +58,3 @@ mod log_tests {
         assert_eq!(event.fields[1].value, "event description");
     }
 }
-

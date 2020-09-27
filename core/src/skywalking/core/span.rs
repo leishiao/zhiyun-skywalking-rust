@@ -29,7 +29,7 @@ use std::fmt::Formatter;
 /// 1. EntrySpan EntrySpan represents a service provider, also the endpoint of server side. As an APM system, we are targeting the application servers. So almost all the services and MQ-consumer are EntrySpan(s).
 /// 2. LocalSpan LocalSpan represents a normal Java method, which does not relate to remote service, neither a MQ producer/consumer nor a service(e.g. HTTP service) provider/consumer.
 /// 3. ExitSpan ExitSpan represents a client of service or MQ-producer, as named as LeafSpan at early age of SkyWalking. e.g. accessing DB by JDBC, reading Redis/Memcached are cataloged an ExitSpan.
-pub trait Span {
+pub trait Span: SpanClone {
     /// Start the span with the current system time
     fn start(&mut self);
     /// Start the span by using given time point.
@@ -59,6 +59,8 @@ pub trait Span {
     fn is_entry(&self) -> bool;
     /// Return true if the span is an exit span
     fn is_exit(&self) -> bool;
+    /// return true is the span is error or
+    fn is_error(&self) -> bool;
     /// Return span id.
     fn span_id(&self) -> i32;
     /// Return the replicated existing tags.
@@ -67,6 +69,31 @@ pub trait Span {
     fn operation_name(&self) -> &str;
     /// Return time info, tuple: (start_time, end_time)
     fn time_info(&self) -> (u64, u64);
+    /// merge arg span tags into to current span, peer info
+    fn merge_span(&mut self, span: Box<dyn Span + Send>);
+    /// set peer info
+    fn set_peer(&mut self, peer: &str);
+    /// get peer info
+    fn peer_info(&self) -> &str;
+}
+
+pub trait SpanClone {
+    fn clone_box(&self) -> Box<dyn Span + Send>;
+}
+
+impl<T> SpanClone for T
+where
+    T: 'static + Span + Send + Clone,
+{
+    fn clone_box(&self) -> Box<dyn Span + Send> {
+        Box::new(self.clone())
+    }
+}
+
+impl Clone for Box<dyn Span + Send> {
+    fn clone(&self) -> Box<dyn Span + Send> {
+        self.clone_box()
+    }
 }
 
 impl Debug for Box<dyn Span + Send> {
@@ -84,6 +111,7 @@ impl Debug for Box<dyn Span + Send> {
     }
 }
 
+#[derive(Clone)]
 pub struct TracingSpan {
     /// The operation name represents the logic process of this span
     operation_name: String,
@@ -218,6 +246,10 @@ impl Span for TracingSpan {
         self.is_exit
     }
 
+    fn is_error(&self) -> bool {
+        self.error_occurred
+    }
+
     fn span_id(&self) -> i32 {
         self.span_id
     }
@@ -236,6 +268,27 @@ impl Span for TracingSpan {
 
     fn time_info(&self) -> (u64, u64) {
         (self.start_time, self.end_time)
+    }
+
+    fn merge_span(&mut self, span: Box<dyn Span + Send>) {
+        let tags = span.tags();
+        for tag in tags {
+            self.tag(tag);
+        }
+        if span.is_error() {
+            self.error_occurred();
+        }
+    }
+
+    fn peer_info(&self) -> &str {
+        if let Some(s) = &self.peer {
+            return s;
+        }
+        return "";
+    }
+
+    fn set_peer(&mut self, peer: &str) {
+        self.peer = Some(peer.to_owned());
     }
 }
 
@@ -294,5 +347,12 @@ mod span_tests {
         ));
 
         assert_eq!(span.logs.len(), 1);
+    }
+
+    #[test]
+    fn test_box_span_clone() {
+        let span = TracingSpan::new_entry_span("op1", 0, 1);
+        let b: Box<dyn Span + Send> = Box::new(span);
+        let b1 = b.clone();
     }
 }

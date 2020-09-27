@@ -14,7 +14,6 @@
 // limitations under the License.
 
 pub use context_manager::ContextManager;
-
 pub mod context_manager;
 pub mod reporter;
 

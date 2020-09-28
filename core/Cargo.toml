@@ -28,4 +28,12 @@ lazy_static = "1.4"
 tokio = {version="0.2", features=["rt-threaded", "blocking", "rt-util", "sync"]}
 tokio-util = {version="0.3", features=["codec"]}
 log = "0.4"
+anyhow = "1.0"
+get_if_addrs = "0.5.3"
 env_logger = "0.7.1"
+uuid = { version = "0.8.1", features = ["v4"] }
+tonic = "0.3"
+prost = "0.6"
+
+[build-dependencies]
+tonic-build = "0.3"

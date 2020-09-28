@@ -13,22 +13,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::config::Config;
 use crate::skywalking::core::{ContextListener, TracingContext};
 
-pub struct Reporter {}
+#[allow(dead_code)]
+pub struct Reporter {
+    config: Config,
+}
 
 impl ContextListener for Reporter {
     fn service_instance_id(&self) -> Option<i32> {
         Some(1)
     }
 
-    fn report_trace(&self, _: Box<TracingContext>) {
-        unimplemented!()
-    }
+    fn report_trace(&self, _: Box<TracingContext>) {}
 }
 
 impl Reporter {
     pub fn new() -> Self {
-        Reporter {}
+        Reporter {
+            config: Config::new(),
+        }
     }
 }

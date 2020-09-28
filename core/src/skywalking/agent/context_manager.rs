@@ -27,7 +27,7 @@ task_local! {
 }
 
 lazy_static! {
-    static ref SKYWALKING_REPORTER: Reporter = { Reporter::new() };
+    static ref SKYWALKING_REPORTER: Reporter = Reporter::new();
 }
 
 pub struct ContextManager {}
@@ -64,7 +64,6 @@ impl ContextManager {
                 let mut mut_context = context.borrow_mut();
                 mut_context.finish_span(span);
                 if is_first_span {
-                    println!("执行了mut_context finish");
                     mut_context.finish();
                 }
             }
@@ -76,7 +75,7 @@ impl ContextManager {
     pub fn tracing_exit(
         operation_name: &str,
         peer: &str,
-        injector: Option<&dyn Injectable>,
+        injector: Option<&mut dyn Injectable>,
     ) -> Option<Box<dyn Span + Send>> {
         return CTX.with(|context| {
             let mut span;
@@ -169,7 +168,7 @@ impl CurrentTracingContext {
         operation_name: &str,
         parent_span_id: Option<i32>,
         peer: &str,
-        injector: Option<&dyn Injectable>,
+        injector: Option<&mut dyn Injectable>,
     ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
             None => None,
@@ -233,10 +232,10 @@ impl CurrentTracingContext {
         match self.option.borrow_mut() {
             None => {}
             Some(wx) => {
-                let tracingContext = &wx.context;
+                let tracing_ctx = &wx.context;
                 println!(
                     "start to finish the context, current tracing_ctx:{:?}",
-                    tracingContext
+                    tracing_ctx
                 );
                 wx.span_stack.clear();
 

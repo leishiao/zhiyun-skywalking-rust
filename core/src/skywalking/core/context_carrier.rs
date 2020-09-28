@@ -18,7 +18,7 @@
 pub trait Injectable {
     /// Inject the given key/value into the implementation.
     /// The way of injection is determined by the implementation, no panic! should happens even injection fails.
-    fn inject(&self, key: String, value: String);
+    fn inject(&mut self, key: String, value: String);
 }
 
 /// The Extractable implementations extract propagated context out the implementation.

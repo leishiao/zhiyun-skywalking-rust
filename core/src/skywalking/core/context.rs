@@ -13,9 +13,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use base64::{decode, encode};
+// use base64::{decode, encode};
 
-use crate::skywalking::agent::reporter::Reporter;
+// use crate::skywalking::agent::reporter::Reporter;
 use crate::skywalking::core::context_carrier::{Extractable, Injectable};
 use crate::skywalking::core::id::IDGenerator;
 use crate::skywalking::core::segment_ref::SegmentRef;
@@ -38,7 +38,7 @@ pub trait Context {
         operation_name: &str,
         parent_span_id: Option<i32>,
         peer: &str,
-        injector: Option<&dyn Injectable>,
+        injector: Option<&mut dyn Injectable>,
     ) -> Box<dyn Span + Send>;
     /// Create an local span belonging this context
     fn create_local_span(
@@ -152,7 +152,7 @@ impl Context for TracingContext {
         operation_name: &str,
         parent_span_id: Option<i32>,
         peer: &str,
-        injector: Option<&dyn Injectable>,
+        injector: Option<&mut dyn Injectable>,
     ) -> Box<dyn Span + Send> {
         let exit_span = TracingSpan::new_exit_span(
             operation_name,
@@ -221,7 +221,7 @@ mod context_tests {
                     "op3",
                     Some(span2.span_id()),
                     "127.0.0.1:8080",
-                    Some(&HeaderCarrier {}),
+                    Some(&mut HeaderCarrier {}),
                 );
                 assert_eq!(span3.span_id(), 2);
 
@@ -266,7 +266,7 @@ mod context_tests {
         }
 
         fn report_trace(&self, finished_context: Box<TracingContext>) {
-            self.sender.send(finished_context);
+            let _ = self.sender.send(finished_context);
         }
     }
 
@@ -281,7 +281,7 @@ mod context_tests {
     struct HeaderCarrier {}
 
     impl Injectable for HeaderCarrier {
-        fn inject(&self, key: String, value: String) {
+        fn inject(&mut self, key: String, value: String) {
             assert_eq!(key, "sw6");
             assert_eq!(value.len() > 0, true);
         }

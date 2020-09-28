@@ -13,9 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::os::raw::c_long;
-
-use crate::skywalking::core::segment_ref::SegmentRefType::CROSS_PROCESS;
+use crate::skywalking::core::segment_ref::SegmentRefType::CrossProcess;
 use crate::skywalking::core::{Span, TracingContext, ID};
 
 #[derive(Clone, Hash, Debug)]
@@ -35,9 +33,12 @@ pub struct SegmentRef {
 }
 
 #[derive(Clone, Hash, Debug)]
+#[allow(dead_code)]
 enum SegmentRefType {
-    CROSS_PROCESS,
-    CROSS_THREAD,
+    // CROSS_PROCESS,
+    CrossProcess,
+    // CROSS_THREAD,
+    CrossThread,
 }
 
 impl SegmentRef {
@@ -99,7 +100,7 @@ impl SegmentRef {
                 };
 
             Some(SegmentRef {
-                ref_type: CROSS_PROCESS,
+                ref_type: CrossProcess,
                 trace_id,
                 segment_id,
                 span_id,
@@ -136,7 +137,7 @@ impl SegmentRef {
         };
 
         SegmentRef {
-            ref_type: CROSS_PROCESS,
+            ref_type: CrossProcess,
             trace_id: context.trace_id(),
             segment_id: context.segment_id(),
             span_id: exit_span.span_id(),
@@ -201,7 +202,7 @@ impl SegmentRef {
                 Ok(str) => {
                     if str.starts_with("#") {
                         let network: Vec<&str> = str.split("#").collect();
-                        (Some((Some(network[1].to_string()), 0)))
+                        Some((Some(network[1].to_string()), 0))
                     } else {
                         match str.parse::<i32>() {
                             Ok(id) => Some((None, id)),

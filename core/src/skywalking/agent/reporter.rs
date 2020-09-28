@@ -22,7 +22,7 @@ impl ContextListener for Reporter {
         Some(1)
     }
 
-    fn report_trace(&self, finished_context: Box<TracingContext>) {
+    fn report_trace(&self, _: Box<TracingContext>) {
         unimplemented!()
     }
 }

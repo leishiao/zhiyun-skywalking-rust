@@ -22,6 +22,7 @@ pub use context_carrier::Injectable;
 pub use context_listener::ContextListener;
 pub use id::ID;
 pub use span::Span;
+pub use span::SpanLayer;
 pub use tag::Tag;
 
 pub mod context;

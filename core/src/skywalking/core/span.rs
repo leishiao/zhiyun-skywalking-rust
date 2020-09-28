@@ -63,6 +63,8 @@ pub trait Span: SpanClone {
     fn is_error(&self) -> bool;
     /// Return span id.
     fn span_id(&self) -> i32;
+    /// Return parent span id
+    fn parent_span_id(&self) -> i32;
     /// Return the replicated existing tags.
     fn tags(&self) -> Vec<Tag>;
     /// Return operation name
@@ -75,6 +77,8 @@ pub trait Span: SpanClone {
     fn set_peer(&mut self, peer: &str);
     /// get peer info
     fn peer_info(&self) -> &str;
+    /// return span layer
+    fn span_layer(&self) -> SpanLayer;
 }
 
 pub trait SpanClone {
@@ -135,13 +139,40 @@ pub struct TracingSpan {
     tags: Vec<Tag>,
     logs: Vec<LogEvent>,
     refs: Vec<SegmentRef>,
+    span_layer: SpanLayer,
+}
+
+#[derive(Clone)]
+pub enum SpanLayer {
+    DB,
+    Rpc,
+    HTTP,
+    MQ,
+    CACHE,
+}
+
+impl SpanLayer {
+    pub fn val(&self) -> i32 {
+        match self {
+            SpanLayer::DB => 1,
+            SpanLayer::Rpc => 2,
+            SpanLayer::HTTP => 3,
+            SpanLayer::MQ => 4,
+            SpanLayer::CACHE => 5,
+        }
+    }
 }
 
 /// Tracing Span is only created inside TracingContext.
 impl TracingSpan {
     /// Create a new entry span
-    pub fn new_entry_span(operation_name: &str, span_id: i32, parent_span_id: i32) -> TracingSpan {
-        let mut span = TracingSpan::_new(operation_name, span_id, parent_span_id);
+    pub fn new_entry_span(
+        operation_name: &str,
+        span_id: i32,
+        parent_span_id: i32,
+        layer: SpanLayer,
+    ) -> TracingSpan {
+        let mut span = TracingSpan::_new(operation_name, span_id, parent_span_id, layer);
         span.is_entry = true;
         span
     }
@@ -152,21 +183,32 @@ impl TracingSpan {
         span_id: i32,
         parent_span_id: i32,
         peer: &str,
+        layer: SpanLayer,
     ) -> TracingSpan {
-        let mut span = TracingSpan::_new(operation_name, span_id, parent_span_id);
+        let mut span = TracingSpan::_new(operation_name, span_id, parent_span_id, layer);
         span.is_exit = true;
         span.peer = Some(String::from(peer));
         span
     }
 
     /// Create a new local span
-    pub fn new_local_span(operation_name: &str, span_id: i32, parent_span_id: i32) -> TracingSpan {
-        let span = TracingSpan::_new(operation_name, span_id, parent_span_id);
+    pub fn new_local_span(
+        operation_name: &str,
+        span_id: i32,
+        parent_span_id: i32,
+        layer: SpanLayer,
+    ) -> TracingSpan {
+        let span = TracingSpan::_new(operation_name, span_id, parent_span_id, layer);
         span
     }
 
     /// Create a span
-    fn _new(operation_name: &str, span_id: i32, parent_span_id: i32) -> Self {
+    fn _new(
+        operation_name: &str,
+        span_id: i32,
+        parent_span_id: i32,
+        span_layer: SpanLayer,
+    ) -> Self {
         TracingSpan {
             operation_name: String::from(operation_name),
             span_id,
@@ -181,6 +223,7 @@ impl TracingSpan {
             tags: Vec::new(),
             logs: Vec::new(),
             refs: Vec::new(),
+            span_layer,
         }
     }
 
@@ -254,6 +297,10 @@ impl Span for TracingSpan {
         self.span_id
     }
 
+    fn parent_span_id(&self) -> i32 {
+        self.parent_span_id
+    }
+
     fn tags(&self) -> Vec<Tag> {
         let mut tags = Vec::new();
         for t in &self.tags {
@@ -290,6 +337,10 @@ impl Span for TracingSpan {
     fn set_peer(&mut self, peer: &str) {
         self.peer = Some(peer.to_owned());
     }
+
+    fn span_layer(&self) -> SpanLayer {
+        self.span_layer.clone()
+    }
 }
 
 #[cfg(test)]
@@ -302,14 +353,14 @@ mod span_tests {
 
     #[test]
     fn test_span_new() {
-        let mut span = TracingSpan::_new("op1", 0, -1);
+        let mut span = TracingSpan::_new("op1", 0, -1, SpanLayer::Rpc);
         assert_eq!(span.parent_span_id, -1);
         assert_eq!(span.span_id, 0);
         assert_eq!(span.start_time, 0);
         span.start();
         assert_ne!(span.start_time, 0);
 
-        let mut span2 = TracingSpan::_new("op2", 1, 0);
+        let mut span2 = TracingSpan::_new("op2", 1, 0, SpanLayer::Rpc);
         assert_eq!("op2", span2.operation_name);
         assert_eq!(span2.parent_span_id, 0);
         assert_eq!(span2.span_id, 1);
@@ -319,13 +370,13 @@ mod span_tests {
 
     #[test]
     fn test_new_entry_span() {
-        let span = TracingSpan::new_entry_span("op1", 0, 1);
+        let span = TracingSpan::new_entry_span("op1", 0, 1, SpanLayer::Rpc);
         assert_eq!(span.is_entry(), true)
     }
 
     #[test]
     fn test_span_with_tags() {
-        let mut span = TracingSpan::new_entry_span("op1", 0, 1);
+        let mut span = TracingSpan::new_entry_span("op1", 0, 1, SpanLayer::Rpc);
         span.tag(Tag::new(String::from("tag1"), String::from("value1")));
         span.tag(Tag::new(String::from("tag2"), String::from("value2")));
 
@@ -336,7 +387,7 @@ mod span_tests {
 
     #[test]
     fn test_span_with_logs() {
-        let mut span = TracingSpan::_new("op1", 0, -1);
+        let mut span = TracingSpan::_new("op1", 0, -1, SpanLayer::Rpc);
 
         span.log(LogEvent::new(
             123,
@@ -351,7 +402,7 @@ mod span_tests {
 
     #[test]
     fn test_box_span_clone() {
-        let span = TracingSpan::new_entry_span("op1", 0, 1);
+        let span = TracingSpan::new_entry_span("op1", 0, 1, SpanLayer::Rpc);
         let b: Box<dyn Span + Send> = Box::new(span);
         let _ = b.clone();
     }

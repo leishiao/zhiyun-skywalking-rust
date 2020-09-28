@@ -18,7 +18,7 @@ use tokio::task_local;
 
 use crate::skywalking::agent::reporter::Reporter;
 use crate::skywalking::core::{
-    Context, ContextListener, Extractable, Injectable, Span, TracingContext,
+    Context, ContextListener, Extractable, Injectable, Span, SpanLayer, TracingContext,
 };
 use std::future::Future;
 
@@ -37,6 +37,7 @@ impl ContextManager {
     // you need manually start this span
     pub fn tracing_entry(
         operation_name: &str,
+        layer: SpanLayer,
         extractor: Option<&dyn Extractable>,
     ) -> Option<Box<dyn Span + Send>> {
         return CTX.with(|context| {
@@ -45,7 +46,8 @@ impl ContextManager {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
                 let mut mut_context = context.borrow_mut();
                 let parent_span_id = mut_context.parent_span_id();
-                span = mut_context.create_entry_span(operation_name, parent_span_id, extractor);
+                span =
+                    mut_context.create_entry_span(operation_name, parent_span_id, extractor, layer);
             }
             if let Some(s) = span.as_mut() {
                 s.start();
@@ -75,6 +77,7 @@ impl ContextManager {
     pub fn tracing_exit(
         operation_name: &str,
         peer: &str,
+        layer: SpanLayer,
         injector: Option<&mut dyn Injectable>,
     ) -> Option<Box<dyn Span + Send>> {
         return CTX.with(|context| {
@@ -83,7 +86,13 @@ impl ContextManager {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
                 let mut mut_context = context.borrow_mut();
                 let parent_span_id = mut_context.parent_span_id();
-                span = mut_context.create_exit_span(operation_name, parent_span_id, peer, injector);
+                span = mut_context.create_exit_span(
+                    operation_name,
+                    parent_span_id,
+                    peer,
+                    layer,
+                    injector,
+                );
             }
             if let Some(s) = span.as_mut() {
                 s.start();
@@ -94,14 +103,14 @@ impl ContextManager {
 
     // create local span
     // span is automatically started
-    pub fn tracing_local(operation_name: &str) -> Option<Box<dyn Span + Send>> {
+    pub fn tracing_local(operation_name: &str, layer: SpanLayer) -> Option<Box<dyn Span + Send>> {
         return CTX.with(|context| {
             let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
                 let mut mut_context = context.borrow_mut();
                 let parent_span_id = mut_context.parent_span_id();
-                span = mut_context.create_local(operation_name, parent_span_id);
+                span = mut_context.create_local(operation_name, parent_span_id, layer);
             }
             if let Some(s) = span.as_mut() {
                 s.start();
@@ -149,13 +158,14 @@ impl CurrentTracingContext {
         operation_name: &str,
         parent_span_id: Option<i32>,
         extractor: Option<&dyn Extractable>,
+        layer: SpanLayer,
     ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
             None => None,
             Some(wx) => {
-                let span = wx
-                    .context
-                    .create_entry_span(operation_name, parent_span_id, extractor);
+                let span =
+                    wx.context
+                        .create_entry_span(operation_name, parent_span_id, layer, extractor);
                 wx.span_stack.push(span.span_id());
                 Some(span)
             }
@@ -168,14 +178,19 @@ impl CurrentTracingContext {
         operation_name: &str,
         parent_span_id: Option<i32>,
         peer: &str,
+        layer: SpanLayer,
         injector: Option<&mut dyn Injectable>,
     ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
             None => None,
             Some(wx) => {
-                let span =
-                    wx.context
-                        .create_exit_span(operation_name, parent_span_id, peer, injector);
+                let span = wx.context.create_exit_span(
+                    operation_name,
+                    parent_span_id,
+                    peer,
+                    layer,
+                    injector,
+                );
                 wx.span_stack.push(span.span_id());
                 Some(span)
             }
@@ -187,11 +202,14 @@ impl CurrentTracingContext {
         &mut self,
         operation_name: &str,
         parent_span_id: Option<i32>,
+        layer: SpanLayer,
     ) -> Option<Box<dyn Span + Send>> {
         match self.option.borrow_mut() {
             None => None,
             Some(wx) => {
-                let span = wx.context.create_local_span(operation_name, parent_span_id);
+                let span = wx
+                    .context
+                    .create_local_span(operation_name, parent_span_id, layer);
                 wx.span_stack.push(span.span_id());
                 Some(span)
             }
@@ -264,10 +282,11 @@ mod context_tests {
     }
 
     async fn execute() {
-        let span = ContextManager::tracing_entry("entry_span", None);
-        let local_span = ContextManager::tracing_local("local_span");
+        let span = ContextManager::tracing_entry("entry_span", SpanLayer::Rpc, None);
+        let local_span = ContextManager::tracing_local("local_span", SpanLayer::Rpc);
         ContextManager::finish_span(local_span);
-        let exit_span = ContextManager::tracing_exit("operation_name", "peer_info", None);
+        let exit_span =
+            ContextManager::tracing_exit("operation_name", "peer_info", SpanLayer::Rpc, None);
         ContextManager::finish_span(exit_span);
         ContextManager::finish_span(span);
     }

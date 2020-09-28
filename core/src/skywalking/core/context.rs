@@ -20,6 +20,7 @@ use crate::skywalking::core::context_carrier::{Extractable, Injectable};
 use crate::skywalking::core::id::IDGenerator;
 use crate::skywalking::core::segment_ref::SegmentRef;
 use crate::skywalking::core::span::TracingSpan;
+use crate::skywalking::core::SpanLayer;
 use crate::skywalking::core::{Span, ID};
 
 /// Context represents the context of a tracing process.
@@ -30,6 +31,7 @@ pub trait Context {
         &mut self,
         operation_name: &str,
         parent_span_id: Option<i32>,
+        layer: SpanLayer,
         extractor: Option<&dyn Extractable>,
     ) -> Box<dyn Span + Send>;
     /// Create an exit span belonging this context
@@ -38,6 +40,7 @@ pub trait Context {
         operation_name: &str,
         parent_span_id: Option<i32>,
         peer: &str,
+        layer: SpanLayer,
         injector: Option<&mut dyn Injectable>,
     ) -> Box<dyn Span + Send>;
     /// Create an local span belonging this context
@@ -45,6 +48,7 @@ pub trait Context {
         &mut self,
         operation_name: &str,
         parent_span_id: Option<i32>,
+        layer: SpanLayer,
     ) -> Box<dyn Span + Send>;
     /// Finish the given span. The span is only being accept if it belongs to this context.
     /// Return err if the span was created by another context.
@@ -117,6 +121,7 @@ impl Context for TracingContext {
         &mut self,
         operation_name: &str,
         parent_span_id: Option<i32>,
+        layer: SpanLayer,
         extractor: Option<&dyn Extractable>,
     ) -> Box<dyn Span + Send> {
         let mut entry_span = TracingSpan::new_entry_span(
@@ -126,6 +131,7 @@ impl Context for TracingContext {
                 None => -1,
                 Some(s) => s,
             },
+            layer,
         );
 
         if extractor.is_some() {
@@ -152,6 +158,7 @@ impl Context for TracingContext {
         operation_name: &str,
         parent_span_id: Option<i32>,
         peer: &str,
+        layer: SpanLayer,
         injector: Option<&mut dyn Injectable>,
     ) -> Box<dyn Span + Send> {
         let exit_span = TracingSpan::new_exit_span(
@@ -162,6 +169,7 @@ impl Context for TracingContext {
                 Some(s) => s,
             },
             peer,
+            layer,
         );
 
         if injector.is_some() {
@@ -178,6 +186,7 @@ impl Context for TracingContext {
         &mut self,
         operation_name: &str,
         parent_span_id: Option<i32>,
+        layer: SpanLayer,
     ) -> Box<dyn Span + Send> {
         Box::new(TracingSpan::new_local_span(
             operation_name,
@@ -186,6 +195,7 @@ impl Context for TracingContext {
                 None => -1,
                 Some(s) => s,
             },
+            layer,
         ))
     }
 
@@ -203,17 +213,17 @@ mod context_tests {
     use std::sync::mpsc::{Receiver, Sender};
 
     use crate::skywalking::core::{
-        Context, ContextListener, Extractable, Injectable, Tag, TracingContext, ID,
+        Context, ContextListener, Extractable, Injectable, SpanLayer, Tag, TracingContext, ID,
     };
 
     #[test]
     fn test_context_stack() {
         let reporter = MockReporter::new();
         let mut context = TracingContext::new(reporter.service_instance_id()).unwrap();
-        let span1 = context.create_entry_span("op1", None, Some(&MockerHeader {}));
+        let span1 = context.create_entry_span("op1", None, SpanLayer::Rpc, Some(&MockerHeader {}));
         {
             assert_eq!(span1.span_id(), 0);
-            let mut span2 = context.create_local_span("op2", Some(span1.span_id()));
+            let mut span2 = context.create_local_span("op2", Some(span1.span_id()), SpanLayer::Rpc);
             span2.tag(Tag::new(String::from("tag1"), String::from("value1")));
             {
                 assert_eq!(span2.span_id(), 1);
@@ -221,6 +231,7 @@ mod context_tests {
                     "op3",
                     Some(span2.span_id()),
                     "127.0.0.1:8080",
+                    SpanLayer::DB,
                     Some(&mut HeaderCarrier {}),
                 );
                 assert_eq!(span3.span_id(), 2);

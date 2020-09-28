@@ -279,11 +279,12 @@ mod context_tests {
             Some(1)
         }
 
-        fn report_trace(&self, finished_context: Box<TracingContext>) {
+        fn report_trace(&self, finished_context: Box<TracingContext>, try_times: u8) -> bool {
             println!(
                 "finally finished span is:{:?}",
                 finished_context.finished_spans
             );
+            true
         }
     }
 }

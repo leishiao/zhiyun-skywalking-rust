@@ -231,7 +231,7 @@ mod context_tests {
         }
         context.finish_span(span1);
 
-        reporter.report_trace(Box::new(context));
+        reporter.report_trace(Box::new(context), 0);
         // context has moved into reporter. Can't be used again.
 
         let received_context = reporter.recv.recv().unwrap();
@@ -265,8 +265,9 @@ mod context_tests {
             Some(1)
         }
 
-        fn report_trace(&self, finished_context: Box<TracingContext>) {
+        fn report_trace(&self, finished_context: Box<TracingContext>, try_times: u8) -> bool {
             let _ = self.sender.send(finished_context);
+            true
         }
     }
 

@@ -14,6 +14,9 @@
 // limitations under the License.
 
 use super::config::Config;
+// use crate::remote::*;
+use crate::remote::trace_segment_report_service_client::*;
+use crate::remote::*;
 use crate::skywalking::core::{ContextListener, TracingContext};
 use log::error;
 use std::sync::mpsc::sync_channel;
@@ -64,6 +67,7 @@ impl ContextListener for Reporter {
 impl Reporter {
     pub fn new() -> Self {
         let (sender, receiver) = sync_channel::<Box<TracingContext>>(100000);
+        // start a consumer doing consuming work
         thread::spawn(move || loop {
             let _ = receiver.recv();
             // here we consume msg forever

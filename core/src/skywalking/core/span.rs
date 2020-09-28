@@ -353,6 +353,6 @@ mod span_tests {
     fn test_box_span_clone() {
         let span = TracingSpan::new_entry_span("op1", 0, 1);
         let b: Box<dyn Span + Send> = Box::new(span);
-        let b1 = b.clone();
+        let _ = b.clone();
     }
 }

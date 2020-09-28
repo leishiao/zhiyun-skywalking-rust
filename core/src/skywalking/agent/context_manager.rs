@@ -249,7 +249,7 @@ impl CurrentTracingContext {
 #[cfg(test)]
 mod context_tests {
     use crate::skywalking::agent::context_manager::*;
-    use crate::skywalking::core::{ContextListener, Tag, TracingContext};
+    use crate::skywalking::core::{ContextListener, TracingContext};
     use env_logger::Env;
     use tokio::runtime::Runtime;
 

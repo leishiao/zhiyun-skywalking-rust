@@ -273,7 +273,7 @@ mod context_tests {
     struct MockerHeader {}
 
     impl Extractable for MockerHeader {
-        fn extract(&self, key: String) -> &str {
+        fn extract(&self, _: String) -> &str {
             "1-My40LjU=-MS4yLjM=-4-1-1-IzEyNy4wLjAuMTo4MDgw-Iy9wb3J0YWw=-MTIz"
         }
     }

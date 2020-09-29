@@ -20,12 +20,13 @@ use crate::remote::{KeyStringValuePair, SegmentObject, SpanObject};
 use crate::skywalking::core::{ContextListener, TracingContext};
 use futures_util::stream;
 use log::error;
-use tokio::runtime::Runtime;
+use tokio::runtime::Builder;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 use tonic::transport::Channel;
 use tonic::Request;
+
 #[allow(dead_code)]
 pub struct Reporter {
     sender: Sender<Box<TracingContext>>,
@@ -121,7 +122,11 @@ impl Reporter {
     pub fn new() -> Self {
         let (sender, mut receiver) = mpsc::channel::<Box<TracingContext>>(100000);
         let config = Config::new();
-        let run = Runtime::new().unwrap();
+        let run = Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime fail");
         run.spawn(async move {
             let config = config.clone();
             let tracing_client: Result<TraceSegmentReportServiceClient<Channel>, _> =
@@ -154,7 +159,18 @@ impl Reporter {
         });
         Reporter {
             config: Config::new(),
-            sender: sender,
+            sender,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn test_send_segs() {
+        let reporter = Reporter::new();
+        println!("config is:{:?}", reporter.config);
+        println!("Report init finished!");
     }
 }

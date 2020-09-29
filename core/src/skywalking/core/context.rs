@@ -218,7 +218,7 @@ mod context_tests {
 
     #[test]
     fn test_context_stack() {
-        let mut reporter = MockReporter::new();
+        let reporter = MockReporter::new();
         let mut context = TracingContext::new(reporter.service_instance_id()).unwrap();
         let span1 = context.create_entry_span("op1", None, SpanLayer::Rpc, Some(&MockerHeader {}));
         {
@@ -276,7 +276,7 @@ mod context_tests {
             Some(1)
         }
 
-        fn report_trace(&mut self, finished_context: Box<TracingContext>, try_times: u8) -> bool {
+        fn report_trace(&self, finished_context: Box<TracingContext>, _try_times: u8) -> bool {
             let _ = self.sender.send(finished_context);
             true
         }

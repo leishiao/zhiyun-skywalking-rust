@@ -19,13 +19,29 @@ use crate::remote::trace_segment_report_service_client::TraceSegmentReportServic
 use crate::remote::{KeyStringValuePair, SegmentObject, SpanObject};
 use crate::skywalking::core::{ContextListener, TracingContext};
 use futures_util::stream;
+use lazy_static::lazy_static;
 use log::error;
-use tokio::runtime::Builder;
+use std::sync::Arc;
+use std::time::Instant;
+use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 use tonic::transport::Channel;
 use tonic::Request;
+
+const REPORT_BUCKET: u128 = 500;
+
+lazy_static! {
+    static ref GLOBAL_RT: Arc<Runtime> = Arc::new(
+        Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime fail")
+    );
+    static ref GLOBAL_HANDLE: Arc<Handle> = Arc::new(GLOBAL_RT.handle().clone());
+}
 
 #[allow(dead_code)]
 pub struct Reporter {
@@ -40,8 +56,9 @@ impl ContextListener for Reporter {
     }
 
     // 这里不会阻塞,每次失败,重试次数+1
-    fn report_trace(&mut self, trace_info: Box<TracingContext>, try_times: u8) -> bool {
-        let result = self.sender.try_send(trace_info);
+    fn report_trace(&self, trace_info: Box<TracingContext>, try_times: u8) -> bool {
+        let mut sender = self.sender.clone();
+        let result = sender.try_send(trace_info);
         if let Err(e) = result {
             match e {
                 TrySendError::Full(ctx) => {
@@ -122,12 +139,7 @@ impl Reporter {
     pub fn new() -> Self {
         let (sender, mut receiver) = mpsc::channel::<Box<TracingContext>>(100000);
         let config = Config::new();
-        let run = Builder::new()
-            .threaded_scheduler()
-            .enable_all()
-            .build()
-            .expect("create tokio runtime fail");
-        run.spawn(async move {
+        GLOBAL_HANDLE.spawn(async move {
             let config = config.clone();
             let tracing_client: Result<TraceSegmentReportServiceClient<Channel>, _> =
                 TraceSegmentReportServiceClient::connect(format!(
@@ -139,20 +151,33 @@ impl Reporter {
                     config.collector_port.clone().unwrap_or("11800".to_owned())
                 ))
                 .await;
+            // 每个经过一个time bucket, 执行一次flush操作
             if let Ok(mut client) = tracing_client {
                 let mut segments_buffer = Vec::new();
-                // loop {
-                let ref_mut: &mut TraceSegmentReportServiceClient<Channel> = &mut client;
-                let ctx_res = receiver.recv().await;
-                // here we consume msg forever
-                if let Some(ctx) = ctx_res {
-                    let segment = Self::gen_segment(&ctx, &config);
-                    segments_buffer.push(segment);
-                }
-                if segments_buffer.len() > 100 {
-                    let request = Request::new(stream::iter(segments_buffer));
-                    if let Err(e) = ref_mut.collect(request).await {
-                        error!("send segment infos to skywalking failed, e:{:?}", e);
+                let mut last_flush_time = Instant::now();
+                loop {
+                    let ctx_res = receiver.recv().await;
+                    // here we consume msg forever
+                    if let Some(ctx) = ctx_res {
+                        let segment = Self::gen_segment(&ctx, &config);
+                        println!("received new segment:{:?}", segment);
+                        segments_buffer.push(segment);
+                    }
+                    // test use
+                    use tokio::time::delay_for;
+                    delay_for(std::time::Duration::from_millis(REPORT_BUCKET as u64)).await;
+
+                    if last_flush_time.elapsed().as_micros() >= REPORT_BUCKET {
+                        println!("start to flush to grpc tunnel...");
+                        let request = Request::new(stream::iter(segments_buffer));
+                        if let Err(e) = client.collect(request).await {
+                            error!("send segment infos to skywalking failed, e:{:?}", e);
+                            println!("error! {:?}", e);
+                        }
+                        // 生成新的Vec来存储buffer的数据
+                        segments_buffer = Vec::new();
+                        // 刷新最后一次提交的时间为当前时间
+                        last_flush_time = Instant::now();
                     }
                 }
             }
@@ -167,10 +192,30 @@ impl Reporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::skywalking::agent::ContextManager;
+    use crate::skywalking::core::SpanLayer;
+    use std::{thread, time};
+
     #[test]
     fn test_send_segs() {
-        let reporter = Reporter::new();
-        println!("config is:{:?}", reporter.config);
-        println!("Report init finished!");
+        let mut run = Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime fail");
+        run.block_on(async move {
+            let _ = ContextManager::async_enter(async { execute().await }).await;
+        });
+        let ten_millis = time::Duration::from_secs(10);
+        thread::sleep(ten_millis);
+    }
+
+    // 异步执行测试方法
+    async fn execute() {
+        let entry_span = ContextManager::tracing_entry("/xxx/xxx", SpanLayer::HTTP, None);
+        let exit_span =
+            ContextManager::tracing_exit("rpc.service:1.0", "127.0.0.1", SpanLayer::Rpc, None);
+        ContextManager::finish_span(exit_span);
+        ContextManager::finish_span(entry_span);
     }
 }

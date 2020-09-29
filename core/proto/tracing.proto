@@ -17,8 +17,8 @@
  */
 
 syntax = "proto3";
-package remote;
 
+package remote;
 option java_multiple_files = true;
 option java_package = "org.apache.skywalking.apm.network.language.agent.v3";
 option csharp_namespace = "SkyWalking.NetworkProtocol";

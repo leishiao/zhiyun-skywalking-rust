@@ -62,10 +62,10 @@ impl ContextManager {
             if let Some(mut span) = span {
                 span.end();
                 let is_first_span = span.span_id() == 0;
-                println!("span_id:{}", span.span_id());
                 let mut mut_context = context.borrow_mut();
                 mut_context.finish_span(span);
                 if is_first_span {
+                    println!("segment enter finish status!");
                     mut_context.finish();
                 }
             }
@@ -221,10 +221,6 @@ impl CurrentTracingContext {
         match self.option.borrow_mut() {
             None => {}
             Some(wx) => {
-                println!(
-                    "finish_span operation, current stack:{:?}",
-                    wx.context.finished_spans
-                );
                 wx.context.finish_span(span);
                 wx.span_stack.pop();
             }
@@ -247,20 +243,11 @@ impl CurrentTracingContext {
     /// 1. Clear up the context
     /// 2. Transfer the context to profobuf format and pass to reporter.
     fn finish(&mut self) {
-        match self.option.borrow_mut() {
-            None => {}
-            Some(wx) => {
-                let tracing_ctx = &wx.context;
-                println!(
-                    "start to finish the context, current tracing_ctx:{:?}",
-                    tracing_ctx
-                );
-                wx.span_stack.clear();
-
-                // TODO: Transfer tracingContext to protobuf
-            }
+        let ctx = self.option.take();
+        if let Some(mut wx) = ctx {
+            wx.span_stack.clear();
+            SKYWALKING_REPORTER.report_trace(wx.context, 0);
         }
-        self.option = None;
     }
 }
 
@@ -298,7 +285,7 @@ mod context_tests {
             Some(1)
         }
 
-        fn report_trace(&mut self, finished_context: Box<TracingContext>, try_times: u8) -> bool {
+        fn report_trace(&self, finished_context: Box<TracingContext>, _try_times: u8) -> bool {
             println!(
                 "finally finished span is:{:?}",
                 finished_context.finished_spans

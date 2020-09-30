@@ -11,16 +11,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use lazy_static::lazy_static;
-use std::borrow::{Borrow, BorrowMut};
-use std::cell::RefCell;
-use tokio::task_local;
-
 use crate::skywalking::agent::reporter::Reporter;
 use crate::skywalking::core::{
     Context, ContextListener, Extractable, Injectable, Span, SpanLayer, TracingContext,
 };
+use env_logger::Env;
+use lazy_static::lazy_static;
+use log::*;
+use std::borrow::{Borrow, BorrowMut};
+use std::cell::RefCell;
 use std::future::Future;
+use tokio::task_local;
 
 task_local! {
     static CTX: RefCell<Box<CurrentTracingContext>>;
@@ -65,7 +66,7 @@ impl ContextManager {
                 let mut mut_context = context.borrow_mut();
                 mut_context.finish_span(span);
                 if is_first_span {
-                    println!("segment enter finish status!");
+                    debug!("segment enter finish status!segment");
                     mut_context.finish();
                 }
             }
@@ -124,6 +125,7 @@ impl ContextManager {
     where
         F: Future<Output = T>,
     {
+        env_logger::from_env(Env::default().default_filter_or("debug")).init();
         let tracing_ctx = CurrentTracingContext::new();
         CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
     }
@@ -286,7 +288,7 @@ mod context_tests {
         }
 
         fn report_trace(&self, finished_context: Box<TracingContext>, _try_times: u8) -> bool {
-            println!(
+            debug!(
                 "finally finished span is:{:?}",
                 finished_context.finished_spans
             );

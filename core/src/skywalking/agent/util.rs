@@ -43,9 +43,11 @@ pub fn get_inst_default_ip() -> Result<String> {
     Ok(addrs[0].to_string())
 }
 
+#[cfg(test)]
 mod tests {
+    use log::debug;
     #[test]
     fn test_get_ip() {
-        println!("current ip is:{:?}", super::get_inst_default_ip());
+        debug!("current ip is:{:?}", super::get_inst_default_ip());
     }
 }

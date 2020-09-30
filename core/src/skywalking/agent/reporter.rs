@@ -21,7 +21,7 @@ use crate::skywalking::core::{ContextListener, TracingContext};
 use anyhow::Result;
 use futures_util::stream;
 use lazy_static::lazy_static;
-use log::error;
+use log::*;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
@@ -34,7 +34,8 @@ use tonic::transport::Channel;
 use tonic::Code;
 use tonic::Request;
 
-const REPORT_BUCKET: u128 = 500;
+// todo!("上线前将这里设置为正常值")
+const REPORT_BUCKET: u128 = 0;
 
 lazy_static! {
     static ref GLOBAL_RT: Arc<Runtime> = Arc::new(
@@ -150,9 +151,10 @@ impl Reporter {
             let mut last_flush_time = Instant::now();
             loop {
                 let ctx_res = receiver.recv().await;
+                debug!("has received new msg:{:?}", ctx_res);
                 // here we consume msg forever
                 if last_flush_time.elapsed().as_micros() >= REPORT_BUCKET {
-                    println!("start to flush to grpc tunnel...");
+                    debug!("start to flush to grpc tunnel...");
                     Self::send_to_grpc_trace_service(&mut client, &config, ctx_res).await;
                     // 生成新的Vec来存储buffer的数据
                     // 刷新最后一次提交的时间为当前时间
@@ -198,6 +200,7 @@ impl Reporter {
                         let request = Request::new(stream::iter(segments));
                         // success return
                         if let Ok(_) = client.collect(request).await {
+                            debug!("segments send to grpc success:{:?}", ctx_res);
                             return;
                         }
                         delay_for(Duration::from_micros(500)).await;

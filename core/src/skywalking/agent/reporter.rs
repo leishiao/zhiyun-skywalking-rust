@@ -18,16 +18,20 @@ use super::config::Config;
 use crate::remote::trace_segment_report_service_client::TraceSegmentReportServiceClient;
 use crate::remote::{KeyStringValuePair, SegmentObject, SpanObject};
 use crate::skywalking::core::{ContextListener, TracingContext};
+use anyhow::Result;
 use futures_util::stream;
 use lazy_static::lazy_static;
 use log::error;
 use std::sync::Arc;
+use std::time::Duration;
 use std::time::Instant;
 use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
+use tokio::time::delay_for;
 use tonic::transport::Channel;
+use tonic::Code;
 use tonic::Request;
 
 const REPORT_BUCKET: u128 = 500;
@@ -98,7 +102,7 @@ impl Reporter {
                 }
             };
             let key_tags = {
-                let mut v = vec![];
+                let mut v = Vec::new();
                 for t in s.tags() {
                     v.push(KeyStringValuePair {
                         key: t.key(),
@@ -141,44 +145,18 @@ impl Reporter {
         let config = Config::new();
         GLOBAL_HANDLE.spawn(async move {
             let config = config.clone();
-            let tracing_client: Result<TraceSegmentReportServiceClient<Channel>, _> =
-                TraceSegmentReportServiceClient::connect(format!(
-                    "http://{}:{}",
-                    config
-                        .collector_host
-                        .clone()
-                        .unwrap_or("127.0.0.1".to_owned()),
-                    config.collector_port.clone().unwrap_or("11800".to_owned())
-                ))
-                .await;
+            let mut client = Self::loop_retrive_client(&config).await;
             // 每个经过一个time bucket, 执行一次flush操作
-            if let Ok(mut client) = tracing_client {
-                let mut segments_buffer = Vec::new();
-                let mut last_flush_time = Instant::now();
-                loop {
-                    let ctx_res = receiver.recv().await;
-                    // here we consume msg forever
-                    if let Some(ctx) = ctx_res {
-                        let segment = Self::gen_segment(&ctx, &config);
-                        println!("received new segment:{:?}", segment);
-                        segments_buffer.push(segment);
-                    }
-                    // test use
-                    use tokio::time::delay_for;
-                    delay_for(std::time::Duration::from_millis(REPORT_BUCKET as u64)).await;
-
-                    if last_flush_time.elapsed().as_micros() >= REPORT_BUCKET {
-                        println!("start to flush to grpc tunnel...");
-                        let request = Request::new(stream::iter(segments_buffer));
-                        if let Err(e) = client.collect(request).await {
-                            error!("send segment infos to skywalking failed, e:{:?}", e);
-                            println!("error! {:?}", e);
-                        }
-                        // 生成新的Vec来存储buffer的数据
-                        segments_buffer = Vec::new();
-                        // 刷新最后一次提交的时间为当前时间
-                        last_flush_time = Instant::now();
-                    }
+            let mut last_flush_time = Instant::now();
+            loop {
+                let ctx_res = receiver.recv().await;
+                // here we consume msg forever
+                if last_flush_time.elapsed().as_micros() >= REPORT_BUCKET {
+                    println!("start to flush to grpc tunnel...");
+                    Self::send_to_grpc_trace_service(&mut client, &config, ctx_res).await;
+                    // 生成新的Vec来存储buffer的数据
+                    // 刷新最后一次提交的时间为当前时间
+                    last_flush_time = Instant::now();
                 }
             }
         });
@@ -186,6 +164,79 @@ impl Reporter {
             config: Config::new(),
             sender,
         }
+    }
+
+    // retry connect operation until get a correct trace segment client
+    // it will retry until the end of the world
+    pub async fn loop_retrive_client(config: &Config) -> TraceSegmentReportServiceClient<Channel> {
+        loop {
+            let client_res = Self::retrieve_client(config).await;
+            if let Ok(client) = client_res {
+                return client;
+            }
+            delay_for(Duration::from_secs(1)).await;
+        }
+    }
+
+    // 特定情况下失败重试，重试3次后放弃，进行日志备份到本地磁盘
+    pub async fn send_to_grpc_trace_service(
+        client: &mut TraceSegmentReportServiceClient<Channel>,
+        config: &Config,
+        ctx_res: Option<Box<TracingContext>>,
+    ) {
+        let segments = Self::transform_segments(config, &ctx_res);
+        let request = Request::new(stream::iter(segments));
+        if let Err(e) = client.collect(request).await {
+            match e.code() {
+                // 下面这几种情况进行重试操作:
+                // 1.DeadlineExceeded: 请求发生了超时
+                // 2.ResourceExhausted: 资源临时性耗尽
+                // 3.Unavailable: 服务暂时性不可用
+                Code::DeadlineExceeded | Code::ResourceExhausted | Code::Unavailable => {
+                    for _ in 0..3 {
+                        let segments = Self::transform_segments(config, &ctx_res);
+                        let request = Request::new(stream::iter(segments));
+                        // success return
+                        if let Ok(_) = client.collect(request).await {
+                            return;
+                        }
+                        delay_for(Duration::from_micros(500)).await;
+                    }
+                }
+                _ => {
+                    error!("skywalking trace collect method has met serious exception.segments backup to disk.{:?}", 
+                        Self::transform_segments(config, &ctx_res));
+                }
+            }
+        }
+    }
+
+    // segments type transform from library format to grpc format
+    pub fn transform_segments(
+        config: &Config,
+        ctx: &Option<Box<TracingContext>>,
+    ) -> Vec<SegmentObject> {
+        let mut segments_buffer = Vec::new();
+        if let Some(ctx) = ctx {
+            let segment = Self::gen_segment(ctx, &config);
+            segments_buffer.push(segment);
+        }
+        segments_buffer
+    }
+
+    pub async fn retrieve_client(
+        config: &Config,
+    ) -> Result<TraceSegmentReportServiceClient<Channel>> {
+        let tracing_client = TraceSegmentReportServiceClient::connect(format!(
+            "http://{}:{}",
+            config
+                .collector_host
+                .clone()
+                .unwrap_or("127.0.0.1".to_owned()),
+            config.collector_port.clone().unwrap_or("11800".to_owned())
+        ))
+        .await?;
+        Ok(tracing_client)
     }
 }
 

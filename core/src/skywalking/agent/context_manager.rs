@@ -41,7 +41,7 @@ impl ContextManager {
         layer: SpanLayer,
         extractor: Option<&dyn Extractable>,
     ) -> Option<Box<dyn Span + Send>> {
-        return CTX.with(|context| {
+        CTX.try_with(|context| {
             let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
@@ -54,12 +54,13 @@ impl ContextManager {
                 s.start();
             }
             span
-        });
+        })
+        .unwrap_or(None)
     }
 
     // end a span and finish a span
     pub fn finish_span(span: Option<Box<dyn Span + Send>>) {
-        CTX.with(|context| {
+        let _ = CTX.try_with(|context| {
             if let Some(mut span) = span {
                 span.end();
                 let is_first_span = span.span_id() == 0;
@@ -81,7 +82,7 @@ impl ContextManager {
         layer: SpanLayer,
         injector: Option<&mut dyn Injectable>,
     ) -> Option<Box<dyn Span + Send>> {
-        return CTX.with(|context| {
+        CTX.try_with(|context| {
             let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
@@ -99,13 +100,14 @@ impl ContextManager {
                 s.start();
             }
             span
-        });
+        })
+        .unwrap_or(None)
     }
 
     // create local span
     // span is automatically started
     pub fn tracing_local(operation_name: &str, layer: SpanLayer) -> Option<Box<dyn Span + Send>> {
-        return CTX.with(|context| {
+        CTX.try_with(|context| {
             let mut span;
             {
                 // Borrow mut ref has to end in this specific scope, as the context is nested used in f<F>
@@ -117,7 +119,8 @@ impl ContextManager {
                 s.start();
             }
             span
-        });
+        })
+        .unwrap_or(None)
     }
 
     // when first time enter into skywalking async enviroment, call this method

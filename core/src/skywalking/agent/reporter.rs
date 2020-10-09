@@ -259,6 +259,7 @@ mod tests {
             .expect("create tokio runtime fail");
         run.block_on(async move {
             let _ = ContextManager::async_enter(async { execute().await }).await;
+            // async { execute().await }.await
         });
         let ten_millis = time::Duration::from_secs(2);
         thread::sleep(ten_millis);

@@ -135,7 +135,7 @@ impl Context for TracingContext {
         );
 
         if extractor.is_some() {
-            match SegmentRef::from_text(extractor.unwrap().extract("sw6".to_string())) {
+            match SegmentRef::from_text(extractor.unwrap().extract("sw8".to_string())) {
                 Some(reference) => {
                     if self.self_generated_id {
                         self.self_generated_id = false;
@@ -174,7 +174,7 @@ impl Context for TracingContext {
 
         if injector.is_some() {
             injector.unwrap().inject(
-                String::from("sw6"),
+                String::from("sw8"),
                 SegmentRef::for_across_process(self, &exit_span, &peer).serialize(),
             );
         }
@@ -294,7 +294,7 @@ mod context_tests {
 
     impl Injectable for HeaderCarrier {
         fn inject(&mut self, key: String, value: String) {
-            assert_eq!(key, "sw6");
+            assert_eq!(key, "sw8");
             assert_eq!(value.len() > 0, true);
         }
     }

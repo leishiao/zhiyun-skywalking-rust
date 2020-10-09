@@ -15,7 +15,6 @@ use crate::skywalking::agent::reporter::Reporter;
 use crate::skywalking::core::{
     Context, ContextListener, Extractable, Injectable, Span, SpanLayer, TracingContext,
 };
-use env_logger::Env;
 use lazy_static::lazy_static;
 use log::*;
 use std::borrow::{Borrow, BorrowMut};
@@ -128,7 +127,6 @@ impl ContextManager {
     where
         F: Future<Output = T>,
     {
-        env_logger::from_env(Env::default().default_filter_or("debug")).init();
         let tracing_ctx = CurrentTracingContext::new();
         CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
     }

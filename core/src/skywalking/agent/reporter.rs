@@ -265,6 +265,16 @@ mod tests {
         thread::sleep(ten_millis);
     }
 
+    #[test]
+    fn test_not_set_async_env() {
+        let mut run = Builder::new()
+            .threaded_scheduler()
+            .enable_all()
+            .build()
+            .expect("create tokio runtime fail");
+        run.block_on(async move { async { execute().await }.await });
+    }
+
     // 异步执行测试方法
     async fn execute() {
         let entry_span = ContextManager::tracing_entry("/xxx/xxx", SpanLayer::HTTP, None);

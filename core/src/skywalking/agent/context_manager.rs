@@ -27,7 +27,7 @@ task_local! {
 }
 
 lazy_static! {
-    static ref SKYWALKING_REPORTER: Reporter = Reporter::new();
+    pub static ref SKYWALKING_REPORTER: Reporter = Reporter::new();
 }
 
 pub struct ContextManager {}

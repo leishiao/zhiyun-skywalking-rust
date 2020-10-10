@@ -68,4 +68,16 @@ impl Config {
             instance_id: inst_id,
         }
     }
+
+    pub fn get_addr_client(&self) -> String {
+        format!(
+            "{}:{}",
+            self.collector_host
+                .clone()
+                .unwrap_or("UnknowHost".to_owned()),
+            self.collector_port
+                .clone()
+                .unwrap_or("UnknownPort".to_owned())
+        )
+    }
 }

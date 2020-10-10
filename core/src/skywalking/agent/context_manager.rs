@@ -145,7 +145,12 @@ impl CurrentTracingContext {
     /// Create the tracing context in the thread local at the first time.
     pub fn new() -> Self {
         CurrentTracingContext {
-            option: match TracingContext::new(SKYWALKING_REPORTER.service_instance_id()) {
+            option: match TracingContext::new(
+                SKYWALKING_REPORTER.service_instance_id(),
+                SKYWALKING_REPORTER.config.service_name.clone(),
+                SKYWALKING_REPORTER.config.service_instance.clone(),
+                SKYWALKING_REPORTER.config.get_addr_client(),
+            ) {
                 Some(tx) => Some(Box::new(WorkingContext {
                     context: Box::new(tx),
                     span_stack: Vec::new(),

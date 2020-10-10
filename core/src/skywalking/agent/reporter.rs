@@ -51,7 +51,7 @@ lazy_static! {
 #[allow(dead_code)]
 pub struct Reporter {
     sender: Sender<Box<TracingContext>>,
-    config: Config,
+    pub config: Config,
 }
 
 impl ContextListener for Reporter {

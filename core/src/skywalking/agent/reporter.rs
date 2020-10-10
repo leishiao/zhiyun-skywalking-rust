@@ -222,6 +222,7 @@ impl Reporter {
         let mut segments_buffer = Vec::new();
         if let Some(ctx) = ctx {
             let segment = Self::gen_segment(ctx, &config);
+            // println!("Sent segment is:{:?}", segment);
             segments_buffer.push(segment);
         }
         segments_buffer

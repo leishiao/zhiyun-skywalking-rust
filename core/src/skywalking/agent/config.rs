@@ -24,6 +24,7 @@ pub struct Config {
     // 每一次机器重启之后都会发生变化,可以通过环境变量去指定
     pub service_instance: String,
     pub instance_id: i32,
+    pub ip: String,
 }
 
 impl Config {
@@ -33,16 +34,20 @@ impl Config {
         } else {
             UNKNOWN_SERVICE.to_owned()
         };
+        let current_inst_ip = match get_inst_default_ip() {
+            Ok(s) => s,
+            Err(_) => "Unknown".to_owned(),
+        };
+
         let service_instance = if let Ok(v) = var(SKW_SER_INST_KEY) {
             v
         } else {
             let uuid = Uuid::new_v4();
-            let current_inst_ip = match get_inst_default_ip() {
-                Ok(s) => s,
-                Err(_) => "Unknown".to_owned(),
-            };
-
-            format!("{}@{}", uuid.to_string().replace("-", ""), current_inst_ip)
+            format!(
+                "{}@{}",
+                uuid.to_string().replace("-", ""),
+                current_inst_ip.clone()
+            )
         };
 
         let collector_host = if let Ok(v) = var(SKW_COLLECTOR_HOST_KEY) {
@@ -66,6 +71,7 @@ impl Config {
             service_name: service_name,
             service_instance: service_instance,
             instance_id: inst_id,
+            ip: current_inst_ip,
         }
     }
 

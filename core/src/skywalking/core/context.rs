@@ -227,9 +227,7 @@ mod context_tests {
     use std::sync::mpsc;
     use std::sync::mpsc::{Receiver, Sender};
 
-    use crate::skywalking::core::{
-        Context, ContextListener, Extractable, Injectable, SpanLayer, Tag, TracingContext, ID,
-    };
+    use crate::skywalking::core::{ContextListener, Extractable, Injectable, TracingContext};
 
     // #[test]
     // fn test_context_stack() {
@@ -272,11 +270,13 @@ mod context_tests {
         assert_eq!(context.is_none(), true);
     }
 
+    #[allow(dead_code)]
     struct MockReporter {
         sender: Box<Sender<Box<TracingContext>>>,
         recv: Box<Receiver<Box<TracingContext>>>,
     }
 
+    #[allow(dead_code)]
     impl MockReporter {
         fn new() -> Self {
             let (tx, rx) = mpsc::channel();

@@ -241,8 +241,8 @@ impl SegmentRef {
 
 #[cfg(test)]
 mod segment_ref_tests {
-    use crate::skywalking::core::segment_ref::SegmentRef;
-    use crate::skywalking::core::ID;
+    // use crate::skywalking::core::segment_ref::SegmentRef;
+    // use crate::skywalking::core::ID;
 
     // #[test]
     // fn test_deserialize_context_carrier() {

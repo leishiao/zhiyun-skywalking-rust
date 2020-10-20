@@ -180,7 +180,6 @@ impl SegmentRef {
             ),
             base64::encode(self.addr_client.as_bytes()),
         ];
-        println!("after serialize result is:{:?}", parts);
         parts.join("-")
     }
 

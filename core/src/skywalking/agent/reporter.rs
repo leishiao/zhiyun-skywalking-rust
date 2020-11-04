@@ -24,7 +24,6 @@ use lazy_static::lazy_static;
 use log::*;
 use std::sync::Arc;
 use std::time::Duration;
-use std::time::Instant;
 use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
@@ -33,9 +32,6 @@ use tokio::time::delay_for;
 use tonic::transport::Channel;
 use tonic::Code;
 use tonic::Request;
-
-// todo!("上线前将这里设置为正常值")
-const REPORT_BUCKET: u128 = 0;
 
 lazy_static! {
     static ref GLOBAL_RT: Arc<Runtime> = Arc::new(
@@ -148,18 +144,10 @@ impl Reporter {
             let config = config.clone();
             let mut client = Self::loop_retrive_client(&config).await;
             // 每个经过一个time bucket, 执行一次flush操作
-            let mut last_flush_time = Instant::now();
             loop {
                 let ctx_res = receiver.recv().await;
                 debug!("has received new msg:{:?}", ctx_res);
-                // here we consume msg forever
-                if last_flush_time.elapsed().as_micros() >= REPORT_BUCKET {
-                    debug!("start to flush to grpc tunnel...");
-                    Self::send_to_grpc_trace_service(&mut client, &config, ctx_res).await;
-                    // 生成新的Vec来存储buffer的数据
-                    // 刷新最后一次提交的时间为当前时间
-                    last_flush_time = Instant::now();
-                }
+                Self::send_to_grpc_trace_service(&mut client, &config, ctx_res).await;
             }
         });
         Reporter {

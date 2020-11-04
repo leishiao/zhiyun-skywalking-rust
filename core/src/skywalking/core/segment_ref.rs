@@ -169,7 +169,7 @@ impl SegmentRef {
             "1".to_string(),
             base64::encode(self.trace_id.to_string().as_bytes()),
             base64::encode(self.segment_id.to_string().as_bytes()),
-            "1".to_string(),
+            self.span_id.to_string(),
             base64::encode(self.service_name.as_bytes()),
             base64::encode(self.service_inst.as_bytes()),
             base64::encode(

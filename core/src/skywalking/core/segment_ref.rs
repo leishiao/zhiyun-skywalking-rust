@@ -16,6 +16,7 @@
 use crate::skywalking::core::segment_ref::SegmentRefType::CrossProcess;
 use crate::skywalking::core::{Span, TracingContext, ID};
 
+const SAMPLED: &str = "1";
 #[derive(Clone, Hash, Debug)]
 pub struct SegmentRef {
     ref_type: SegmentRefType,
@@ -164,9 +165,18 @@ impl SegmentRef {
         }
     }
 
+    // sw8 header的格式如下:
+    // sample: 表示是否采样（0忽略，1表示采样）
+    // trace id: String(base64 encode)
+    // parent trace segment id: String(base64)
+    // parent span id: 整型数字
+    // parent service: 服务名称
+    // parent service instance: 服务实例名称
+    // parent endpoint: 服务url
+    // target address: 调用放在发起服务调用的时候目的服务的地址
     pub fn serialize(&self) -> String {
         let parts: Vec<String> = vec![
-            "1".to_string(),
+            SAMPLED.to_string(),
             base64::encode(self.trace_id.to_string().as_bytes()),
             base64::encode(self.segment_id.to_string().as_bytes()),
             self.span_id.to_string(),

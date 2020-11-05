@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::super::core::id::*;
 use crate::skywalking::agent::reporter::Reporter;
 use crate::skywalking::core::{
     Context, ContextListener, Extractable, Injectable, Span, SpanLayer, TracingContext,
@@ -129,6 +130,15 @@ impl ContextManager {
     {
         let tracing_ctx = CurrentTracingContext::new();
         CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
+    }
+
+    // Do this when you know what you are doing!
+    pub fn change_trace_id(id: ID) -> bool {
+        let try_res = CTX.try_with(|context| {
+            let mut mut_context = context.borrow_mut();
+            mut_context.change_trace_id(id);
+        });
+        try_res.is_ok()
     }
 }
 
@@ -256,6 +266,14 @@ impl CurrentTracingContext {
             wx.span_stack.clear();
             // println!("finished context is:{:?}", wx.context);
             SKYWALKING_REPORTER.report_trace(wx.context, 0);
+        }
+    }
+
+    fn change_trace_id(&mut self, id: ID) {
+        let r = self.option.borrow_mut();
+        if let Some(ctx) = r {
+            let c = &mut ctx.context;
+            c.change_trace_id(id);
         }
     }
 }

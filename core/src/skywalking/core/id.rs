@@ -40,20 +40,19 @@ impl IDGenerator {
 
 /// ID is used for trace id and segment id.
 /// It is combined by 3 i64 numbers, and could be formatted as `part1.part2.part3` string.
-#[derive(Clone, Hash, Debug)]
-pub struct ID {
-    part1: i64,
-    part2: i64,
-    part3: i64,
+#[derive(Clone, Hash, Debug, PartialEq)]
+pub enum ID {
+    NumID(i64, i64, i64),
+    StrID(String),
 }
 
 impl ID {
     pub fn new(part1: i64, part2: i64, part3: i64) -> Self {
-        ID {
-            part1,
-            part2,
-            part3,
-        }
+        ID::NumID(part1, part2, part3)
+    }
+
+    pub fn new_by_string(s: String) -> Self {
+        ID::StrID(s)
     }
 
     /// Convert the literal string text back to ID object.
@@ -80,15 +79,12 @@ impl ID {
     }
 }
 
-impl PartialEq for ID {
-    fn eq(&self, other: &Self) -> bool {
-        self.part1 == other.part1 && self.part2 == other.part2 && self.part3 == other.part3
-    }
-}
-
 impl ToString for ID {
     fn to_string(&self) -> String {
-        format!("{}.{}.{}", self.part1, self.part2, self.part3)
+        match self {
+            ID::NumID(a, b, c) => format!("{}.{}.{}", a, b, c),
+            ID::StrID(s) => s.clone(),
+        }
     }
 }
 
@@ -100,7 +96,9 @@ mod id_tests {
     #[test]
     fn test_id_generator() {
         let id = IDGenerator::new_id(1);
-        assert_eq!(id.part1, 1);
+        if let ID::NumID(a, _, _) = id {
+            assert_eq!(a, 1);
+        }
     }
 
     #[test]

@@ -60,7 +60,7 @@ pub struct TracingContext {
     /// Span id sequence. Indicate the number of created spans.
     next_seq: i32,
 
-    primary_trace_id: ID,
+    pub primary_trace_id: Option<ID>,
     segment_id: ID,
     self_generated_id: bool,
     entry_endpoint_name: Option<String>,
@@ -88,7 +88,7 @@ impl TracingContext {
             None => None,
             Some(id) => Some(TracingContext {
                 next_seq: -1,
-                primary_trace_id: IDGenerator::new_id(id),
+                primary_trace_id: Some(IDGenerator::new_id(id)),
                 segment_id: IDGenerator::new_id(id),
                 self_generated_id: true,
                 entry_endpoint_name: None,
@@ -115,7 +115,9 @@ impl TracingContext {
     }
 
     pub fn trace_id(&self) -> ID {
-        self.primary_trace_id.clone()
+        // primary_trace_id should never be None
+        // Option is only for traceId replace
+        self.primary_trace_id.clone().unwrap_or(ID::new(1, 1, 1))
     }
 
     pub fn segment_id(&self) -> ID {
@@ -126,6 +128,10 @@ impl TracingContext {
     fn next_span_id(&mut self) -> i32 {
         self.next_seq = self.next_seq + 1;
         self.next_seq
+    }
+
+    pub fn change_trace_id(&mut self, id: ID) {
+        self.primary_trace_id.replace(id);
     }
 }
 

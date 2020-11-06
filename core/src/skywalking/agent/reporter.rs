@@ -24,14 +24,19 @@ use lazy_static::lazy_static;
 use log::*;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
 use tokio::time::delay_for;
+use tokio::time::timeout;
 use tonic::transport::Channel;
 use tonic::Code;
 use tonic::Request;
+
+// batch skywalking segments every REPORT_BUCKET microseconds
+const REPORT_BUCKET: u128 = 500;
 
 lazy_static! {
     static ref GLOBAL_RT: Arc<Runtime> = Arc::new(
@@ -143,11 +148,28 @@ impl Reporter {
         GLOBAL_HANDLE.spawn(async move {
             let config = config.clone();
             let mut client = Self::loop_retrive_client(&config).await;
+            let mut last_flush_time = Instant::now();
+            let mut vec: Vec<Option<Box<TracingContext>>> = Vec::new();
             // 每个经过一个time bucket, 执行一次flush操作
             loop {
-                let ctx_res = receiver.recv().await;
-                debug!("has received new msg:{:?}", ctx_res);
-                Self::send_to_grpc_trace_service(&mut client, &config, ctx_res).await;
+                // 每次等待时间不能超过REPORT_BUCKET
+                if let Ok(ctx) =
+                    timeout(Duration::from_millis(REPORT_BUCKET as u64), receiver.recv()).await
+                {
+                    vec.push(ctx);
+                }
+                // 超时的情况有可能是0，那么就进行下一次循环操作
+                if vec.is_empty() {
+                    warn!("skw queue is empty in {} miliseconds", REPORT_BUCKET);
+                    continue;
+                }
+                // channel recv的速度远大于grpc传输通信的速度
+                if last_flush_time.elapsed().as_millis() >= REPORT_BUCKET || vec.len() > 500 {
+                    debug!("start to flush to grpc tunnel...");
+                    Self::send_to_grpc_trace_service(&mut client, &config, vec).await;
+                    last_flush_time = Instant::now();
+                    vec = Vec::new();
+                }
             }
         });
         Reporter {
@@ -169,12 +191,13 @@ impl Reporter {
     }
 
     // 特定情况下失败重试，重试3次后放弃，进行日志备份到本地磁盘
+    // grpc在连接丢失的情况下会在传输层会自动进行重连接，上层不需要考虑补偿进行连接的操作
     pub async fn send_to_grpc_trace_service(
         client: &mut TraceSegmentReportServiceClient<Channel>,
         config: &Config,
-        ctx_res: Option<Box<TracingContext>>,
+        v_ctx: Vec<Option<Box<TracingContext>>>,
     ) {
-        let segments = Self::transform_segments(config, &ctx_res);
+        let segments = Self::transform_segments(config, &v_ctx);
         let request = Request::new(stream::iter(segments));
         if let Err(e) = client.collect(request).await {
             match e.code() {
@@ -184,19 +207,21 @@ impl Reporter {
                 // 3.Unavailable: 服务暂时性不可用
                 Code::DeadlineExceeded | Code::ResourceExhausted | Code::Unavailable => {
                     for _ in 0..3 {
-                        let segments = Self::transform_segments(config, &ctx_res);
+                        let segments = Self::transform_segments(config, &v_ctx);
                         let request = Request::new(stream::iter(segments));
                         // success return
                         if let Ok(_) = client.collect(request).await {
-                            debug!("segments send to grpc success:{:?}", ctx_res);
+                            debug!("segments send to grpc success:{:?}", v_ctx);
                             return;
                         }
                         delay_for(Duration::from_micros(500)).await;
                     }
                 }
                 _ => {
+                    error!("error msg:{:?}", &e);
                     error!("skywalking trace collect method has met serious exception.segments backup to disk.{:?}", 
-                        Self::transform_segments(config, &ctx_res));
+                        Self::transform_segments(config, &v_ctx));
+                    todo!("日志持久化未处理好，格式未处理好");
                 }
             }
         }
@@ -205,13 +230,14 @@ impl Reporter {
     // segments type transform from library format to grpc format
     pub fn transform_segments(
         config: &Config,
-        ctx: &Option<Box<TracingContext>>,
+        ctx: &Vec<Option<Box<TracingContext>>>,
     ) -> Vec<SegmentObject> {
         let mut segments_buffer = Vec::new();
-        if let Some(ctx) = ctx {
-            let segment = Self::gen_segment(ctx, &config);
-            // println!("Sent segment is:{:?}", segment);
-            segments_buffer.push(segment);
+        for v in ctx {
+            if let Some(ctx) = v {
+                let segment = Self::gen_segment(ctx, &config);
+                segments_buffer.push(segment);
+            }
         }
         segments_buffer
     }
@@ -237,20 +263,33 @@ mod tests {
     use super::*;
     use crate::skywalking::agent::ContextManager;
     use crate::skywalking::core::SpanLayer;
+    use env_logger;
+    use env_logger::Env;
     use std::{thread, time};
 
     #[test]
     fn test_send_segs() {
+        // use std::time::{SystemTime, UNIX_EPOCH};
+        // let start = SystemTime::now();
+        // let since_the_epoch = start
+        //     .duration_since(UNIX_EPOCH)
+        //     .expect("Time went backwards");
+        // println!("{:?}", since_the_epoch);
+        env_logger::from_env(Env::default().default_filter_or("info")).init();
         let mut run = Builder::new()
             .threaded_scheduler()
             .enable_all()
             .build()
             .expect("create tokio runtime fail");
         run.block_on(async move {
-            let _ = ContextManager::async_enter(async { execute().await }).await;
-            // async { execute().await }.await
+            for _ in 0..2000 {
+                for _ in 0..10 {
+                    let _ = ContextManager::async_enter(async { execute().await }).await;
+                }
+                delay_for(Duration::from_secs(1)).await;
+            }
         });
-        let ten_millis = time::Duration::from_secs(2);
+        let ten_millis = time::Duration::from_secs(1000);
         thread::sleep(ten_millis);
     }
 

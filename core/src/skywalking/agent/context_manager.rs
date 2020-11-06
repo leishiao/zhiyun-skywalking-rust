@@ -264,7 +264,6 @@ impl CurrentTracingContext {
         let ctx = self.option.take();
         if let Some(mut wx) = ctx {
             wx.span_stack.clear();
-            // println!("finished context is:{:?}", wx.context);
             SKYWALKING_REPORTER.report_trace(wx.context, 0);
         }
     }

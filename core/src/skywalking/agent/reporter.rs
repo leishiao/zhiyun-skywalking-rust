@@ -143,7 +143,10 @@ impl Reporter {
     }
 
     pub fn new() -> Self {
-        let (sender, mut receiver) = mpsc::channel::<Box<TracingContext>>(100000);
+        // skw等待队列最大长度
+        const SKW_CHAN_SIZE: usize = 50000;
+        let (sender, mut receiver) = mpsc::channel::<Box<TracingContext>>(SKW_CHAN_SIZE);
+
         let config = Config::new();
         GLOBAL_HANDLE.spawn(async move {
             let config = config.clone();
@@ -166,7 +169,8 @@ impl Reporter {
                 // channel recv的速度远大于grpc传输通信的速度
                 if last_flush_time.elapsed().as_millis() >= REPORT_BUCKET || vec.len() > 500 {
                     debug!("start to flush to grpc tunnel...");
-                    Self::send_to_grpc_trace_service(&mut client, &config, vec).await;
+                    // 自动加入重试能力
+                    Self::retry_send_skw(&mut client, &config, vec).await;
                     last_flush_time = Instant::now();
                     vec = Vec::new();
                 }
@@ -186,7 +190,42 @@ impl Reporter {
             if let Ok(client) = client_res {
                 return client;
             }
+            warn!("尝试重连skywalking中...");
             delay_for(Duration::from_secs(1)).await;
+        }
+    }
+
+    pub async fn retry_send_skw(
+        client: &mut TraceSegmentReportServiceClient<Channel>,
+        config: &Config,
+        v_ctx: Vec<Option<Box<TracingContext>>>,
+    ) {
+        // 这个常量只会用在这里，所以目前就先放在这里
+        const RETRY_NUM: u8 = 5;
+        let mut origin_ctx = v_ctx;
+        // 重试RETRY NUM直到成功退出
+        for i in 0..RETRY_NUM {
+            let (status, return_ctx) =
+                Self::send_to_grpc_trace_service(client, config, origin_ctx).await;
+            // ctx参数如果执行失败仍然拿回来继续使用
+            origin_ctx = return_ctx;
+            if status {
+                if i > 0 {
+                    warn!("retry success, current retry num is:{}", i);
+                }
+                // success! exit
+                return;
+            } else if i == RETRY_NUM - 1 {
+                error!("skywalking trace collect method has met serious exception.segments backup to disk.{:?}", 
+                         Self::transform_segments(config, &origin_ctx));
+                // 重试超过上限次数，进行返回
+                return;
+            } else {
+                // 出现未知问题导致采点，等待后再进行重试
+                // 等待500ms后再次进行尝试
+                warn!("Request segments to grpc failed, enter into retry logic!");
+                delay_for(Duration::from_millis(500)).await;
+            }
         }
     }
 
@@ -196,7 +235,7 @@ impl Reporter {
         client: &mut TraceSegmentReportServiceClient<Channel>,
         config: &Config,
         v_ctx: Vec<Option<Box<TracingContext>>>,
-    ) {
+    ) -> (bool, Vec<Option<Box<TracingContext>>>) {
         let segments = Self::transform_segments(config, &v_ctx);
         let request = Request::new(stream::iter(segments));
         if let Err(e) = client.collect(request).await {
@@ -206,25 +245,19 @@ impl Reporter {
                 // 2.ResourceExhausted: 资源临时性耗尽
                 // 3.Unavailable: 服务暂时性不可用
                 Code::DeadlineExceeded | Code::ResourceExhausted | Code::Unavailable => {
-                    for _ in 0..3 {
-                        let segments = Self::transform_segments(config, &v_ctx);
-                        let request = Request::new(stream::iter(segments));
-                        // success return
-                        if let Ok(_) = client.collect(request).await {
-                            debug!("segments send to grpc success:{:?}", v_ctx);
-                            return;
-                        }
-                        delay_for(Duration::from_micros(500)).await;
-                    }
+                    warn!("Request grpc error!{:?}", e);
+                    return (false, v_ctx);
                 }
                 _ => {
-                    error!("error msg:{:?}", &e);
-                    error!("skywalking trace collect method has met serious exception.segments backup to disk.{:?}", 
-                        Self::transform_segments(config, &v_ctx));
-                    todo!("日志持久化未处理好，格式未处理好");
+                    // 直接尝试重新连接,获取一个新的skywalking连接
+                    error!("grpc unknown exception occurred, error:{:?}", e);
+                    let new_client = Self::loop_retrive_client(config).await;
+                    *client = new_client;
+                    return (false, v_ctx);
                 }
             }
         }
+        return (true, v_ctx);
     }
 
     // segments type transform from library format to grpc format

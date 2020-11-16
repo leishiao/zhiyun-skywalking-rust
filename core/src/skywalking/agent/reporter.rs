@@ -190,7 +190,7 @@ impl Reporter {
             if let Ok(client) = client_res {
                 return client;
             }
-            warn!("尝试重连skywalking中...");
+            // warn!("尝试重连skywalking中...");
             delay_for(Duration::from_secs(1)).await;
         }
     }

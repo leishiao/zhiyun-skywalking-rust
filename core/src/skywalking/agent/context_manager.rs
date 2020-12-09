@@ -140,6 +140,12 @@ impl ContextManager {
         });
         try_res.is_ok()
     }
+
+    pub fn context_exists() -> bool {
+        CTX.try_with(|_ctx| {
+            true
+        }).unwrap_or(false)
+    }
 }
 
 pub struct CurrentTracingContext {

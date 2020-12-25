@@ -163,7 +163,7 @@ impl Reporter {
                 }
                 // 超时的情况有可能是0，那么就进行下一次循环操作
                 if vec.is_empty() {
-                    warn!("skw queue is empty in {} miliseconds", REPORT_BUCKET);
+                    debug!("skw queue is empty in {} miliseconds", REPORT_BUCKET);
                     continue;
                 }
                 // channel recv的速度远大于grpc传输通信的速度

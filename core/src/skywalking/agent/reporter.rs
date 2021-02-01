@@ -29,8 +29,7 @@ use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
-use tokio::time::delay_for;
-use tokio::time::timeout;
+use tokio::time::{timeout, sleep};
 use tonic::transport::Channel;
 use tonic::Code;
 use tonic::Request;
@@ -40,8 +39,7 @@ const REPORT_BUCKET: u128 = 500;
 
 lazy_static! {
     static ref GLOBAL_RT: Arc<Runtime> = Arc::new(
-        Builder::new()
-            .threaded_scheduler()
+        Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("create tokio runtime fail")
@@ -63,7 +61,7 @@ impl ContextListener for Reporter {
 
     // 这里不会阻塞,每次失败,重试次数+1
     fn report_trace(&self, trace_info: Box<TracingContext>, try_times: u8) -> bool {
-        let mut sender = self.sender.clone();
+        let sender = self.sender.clone();
         let result = sender.try_send(trace_info);
         if let Err(e) = result {
             match e {
@@ -191,7 +189,7 @@ impl Reporter {
                 return client;
             }
             // warn!("尝试重连skywalking中...");
-            delay_for(Duration::from_secs(1)).await;
+            sleep(Duration::from_secs(1)).await;
         }
     }
 
@@ -224,7 +222,7 @@ impl Reporter {
                 // 出现未知问题导致采点，等待后再进行重试
                 // 等待500ms后再次进行尝试
                 warn!("Request segments to grpc failed, enter into retry logic!");
-                delay_for(Duration::from_millis(500)).await;
+                sleep(Duration::from_millis(500)).await;
             }
         }
     }
@@ -309,8 +307,7 @@ mod tests {
         //     .expect("Time went backwards");
         // println!("{:?}", since_the_epoch);
         env_logger::from_env(Env::default().default_filter_or("info")).init();
-        let mut run = Builder::new()
-            .threaded_scheduler()
+        let mut run = Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("create tokio runtime fail");
@@ -328,8 +325,7 @@ mod tests {
 
     #[test]
     fn test_not_set_async_env() {
-        let mut run = Builder::new()
-            .threaded_scheduler()
+        let mut run = Builder::new_multi_thread()
             .enable_all()
             .build()
             .expect("create tokio runtime fail");

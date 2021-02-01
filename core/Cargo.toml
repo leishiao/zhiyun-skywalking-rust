@@ -15,7 +15,7 @@
 
 [package]
 name = "skywalking-core"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Apache Software Foundation (ASF)"]
 edition = "2018"
 description = "SkyWalking tracing core APIs. Provide the way to build SkyWalking native format traces/spans and propagated context."
@@ -25,17 +25,17 @@ license = "Apache 2.0"
 rand = "0.7.3"
 base64 = "0.12"
 lazy_static = "1.4"
-tokio = {version="0.2", features=["rt-threaded", "blocking", "rt-util", "sync"]}
-tokio-util = {version="0.3", features=["codec"]}
+tokio = {version="1", features=["sync", "rt-multi-thread"]}
+tokio-util = {version="0.6", features=["codec"]}
 log = "0.4"
 anyhow = "1.0"
 get_if_addrs = "0.5.3"
 env_logger = "0.7.1"
 uuid = { version = "0.8.1", features = ["v4"] }
-tonic = "0.3"
-prost = "0.6"
+tonic = "0.4"
+prost = {version = "0.7", features = ["prost-derive"]}
 protobuf = "2.17.0"
-futures-util = "0.3.5"
+futures-util = "0.3"
 thiserror = "1.0"
 
 #[build-dependencies]

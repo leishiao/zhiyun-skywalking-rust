@@ -22,15 +22,15 @@ description = "SkyWalking tracing core APIs. Provide the way to build SkyWalking
 license = "Apache 2.0"
 
 [dependencies]
-rand = "0.7.3"
-base64 = "0.12"
+rand = "*"
+base64 = "0.13"
 lazy_static = "1.4"
 tokio = {version="1", features=["sync", "rt-multi-thread"]}
 tokio-util = {version="0.6", features=["codec"]}
 log = "0.4"
 anyhow = "1.0"
 get_if_addrs = "0.5.3"
-env_logger = "0.7.1"
+env_logger = "0.8"
 uuid = { version = "0.8.1", features = ["v4"] }
 tonic = "0.4"
 prost = {version = "0.7", features = ["prost-derive"]}

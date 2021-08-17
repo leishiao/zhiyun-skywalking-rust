@@ -132,6 +132,15 @@ impl ContextManager {
         CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
     }
 
+    // 根据自定义 context 创建 tracing context
+    pub fn async_enter_with_custom_context<T, F>(ctx: Into<TracingContext>, f: F) -> impl Future<Output = T>
+    where
+        F: Future<Output = T>
+    {
+        let tracing_ctx = CurrentTracingContext::new_with_custom_context(ctx);
+        CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
+    }
+
     // Do this when you know what you are doing!
     pub fn change_trace_id(id: ID) -> bool {
         let try_res = CTX.try_with(|context| {
@@ -173,6 +182,16 @@ impl CurrentTracingContext {
                 })),
                 None => None,
             },
+        }
+    }
+
+    /// 直接从自定义的 tracing context 生成
+    pub fn new_with_custom_context(custom_ctx: Into<TracingContext>) -> Self {
+        CurrentTracingContext {
+            option: Some(Box::new(WorkingContext {
+                context: Box::new(rpc.into()),
+                span_stack: Vec::new(),
+            }))
         }
     }
 

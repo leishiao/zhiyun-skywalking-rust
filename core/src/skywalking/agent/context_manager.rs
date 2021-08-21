@@ -21,8 +21,6 @@ use log::*;
 use std::borrow::{Borrow, BorrowMut};
 use std::cell::RefCell;
 use std::future::Future;
-use base64::decode;
-use std::str;
 use tokio::task_local;
 
 task_local! {
@@ -134,15 +132,6 @@ impl ContextManager {
         CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
     }
 
-    // 根据自定义 context 创建 tracing context
-    pub fn async_enter_with_custom_context<T, F>(ctx: impl Into<TracingContext>, f: F) -> impl Future<Output = T>
-    where
-        F: Future<Output = T>
-    {
-        let tracing_ctx = CurrentTracingContext::new_with_custom_context(ctx);
-        CTX.scope(RefCell::new(Box::new(tracing_ctx)), async { f.await })
-    }
-
     // Do this when you know what you are doing!
     pub fn change_trace_id(id: ID) -> bool {
         let try_res = CTX.try_with(|context| {
@@ -153,9 +142,7 @@ impl ContextManager {
     }
 
     pub fn context_exists() -> bool {
-        CTX.try_with(|_ctx| {
-            true
-        }).unwrap_or(false)
+        CTX.try_with(|_ctx| true).unwrap_or(false)
     }
 }
 
@@ -167,54 +154,6 @@ struct WorkingContext {
     context: Box<TracingContext>,
     span_stack: Vec<i32>,
 }
-
-
-fn get_string_id(data: &str) -> String{
-    let _id = match decode(data.as_bytes()) {
-        Ok(x) => {
-            if let Ok(t_id) = str::from_utf8(&x){
-                t_id.to_owned()
-            }else{
-                "-1".to_string()
-            }
-        },  
-        Err(_e) => {
-            "-1".to_string()
-        }
-    };
-    _id
-}
-
-pub struct RpcContext {
-    pub sw8: String
-}
-
-impl Into<TracingContext> for RpcContext {
-    fn into(self) -> TracingContext{
-        let split_sw8 = self.sw8.split("-");
-        let vec: Vec<&str> = split_sw8.collect();
-        let trace_id = get_string_id(vec[1]);
-        let segment_id = get_string_id(vec[2]);
-        let service_instance_id = match SKYWALKING_REPORTER.service_instance_id() {
-            Some(id) => id,
-            None => -1
-        };
-        let span_id = match vec[3].parse::<i32>() {
-                Ok(id) => id,
-                _ => -1
-            };
-        TracingContext::new_with_custom_context(
-            span_id,
-            ID::StrID(segment_id),
-            Some(ID::StrID(trace_id)), 
-            service_instance_id,
-            SKYWALKING_REPORTER.config.service_name.clone(),
-            SKYWALKING_REPORTER.config.service_instance.clone(),
-            SKYWALKING_REPORTER.config.get_addr_client())
-            
-        }
-    }
-
 
 impl CurrentTracingContext {
     /// Create the tracing context in the thread local at the first time.
@@ -233,18 +172,6 @@ impl CurrentTracingContext {
                 None => None,
             },
         }
-    }
-
-    /// 直接从自定义的 tracing context 生成
-    pub fn new_with_custom_context(rpc_ctx: impl Into<TracingContext> ) -> Self {
-        let t_ctx: TracingContext = rpc_ctx.into();
-        let ctx = CurrentTracingContext {
-            option: Some(Box::new(WorkingContext {
-                context: Box::new(t_ctx),
-                span_stack: Vec::new(),
-            }))
-        };
-        ctx
     }
 
     /// Delegate to the tracing core entry span creation method, if current context is valid.
@@ -328,10 +255,8 @@ impl CurrentTracingContext {
         match self.option.borrow() {
             None => None,
             Some(wx) => match wx.span_stack.last() {
-                
                 None => None,
-                Some(span_id) => {
-                    Some(span_id.clone())},
+                Some(span_id) => Some(span_id.clone()),
             },
         }
     }

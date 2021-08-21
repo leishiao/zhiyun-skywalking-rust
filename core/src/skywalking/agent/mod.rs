@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-pub use context_manager::{ContextManager, RpcContext};
+pub use context_manager::ContextManager;
 pub mod config;
 pub mod context_manager;
 pub mod reporter;

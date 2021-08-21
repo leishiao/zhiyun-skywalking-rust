@@ -23,7 +23,6 @@ use crate::skywalking::core::span::TracingSpan;
 use crate::skywalking::core::SpanLayer;
 use crate::skywalking::core::{Span, ID};
 
-
 /// Context represents the context of a tracing process.
 /// All new span belonging to this tracing context should be created through this context.
 pub trait Context {
@@ -101,30 +100,6 @@ impl TracingContext {
                 addr_client,
             }),
         }
-    }
-
-    pub fn new_with_custom_context(
-        span_id: i32,
-        segment_id: ID,
-        trace_id:Option<ID>,
-        service_instance_id: i32,
-        service: String,
-        service_inst: String,
-        addr_client: String
-    ) -> TracingContext {
-            TracingContext {
-                next_seq: span_id,
-                primary_trace_id: trace_id,
-                segment_id: segment_id,
-                self_generated_id: false,
-                entry_endpoint_name: None,
-                first_ref: None,
-                service_instance_id: service_instance_id,
-                finished_spans: Vec::new(),
-                service,
-                service_inst,
-                addr_client,
-            }
     }
 
     pub fn service_instance_id(&self) -> i32 {

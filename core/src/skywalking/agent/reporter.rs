@@ -16,7 +16,7 @@
 use super::config::Config;
 // use crate::remote::*;
 use crate::remote::trace_segment_report_service_client::TraceSegmentReportServiceClient;
-use crate::remote::{KeyStringValuePair, SegmentObject, SpanObject};
+use crate::remote::{KeyStringValuePair, SegmentObject, SegmentReference, SpanObject};
 use crate::skywalking::core::{ContextListener, TracingContext};
 use anyhow::Result;
 use futures_util::stream;
@@ -29,7 +29,7 @@ use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::Sender;
-use tokio::time::{timeout, sleep};
+use tokio::time::{sleep, timeout};
 use tonic::transport::Channel;
 use tonic::Code;
 use tonic::Request;
@@ -101,12 +101,20 @@ impl Reporter {
                     2 //local
                 }
             };
+            let mut refs_vec = Vec::new();
             let key_tags = {
                 let mut v = Vec::new();
                 for t in s.tags() {
+                    let key = t.key();
+                    let value = t.value();
+                    if key == "sw8-parent" {
+                        if let Some(segment_ref) = SegmentReference::from_text(&value){
+                            refs_vec.push(segment_ref)
+                        }
+                    }
                     v.push(KeyStringValuePair {
-                        key: t.key(),
-                        value: t.value(),
+                        key: key,
+                        value: value,
                     });
                 }
                 v
@@ -116,7 +124,7 @@ impl Reporter {
                 parent_span_id: s.parent_span_id(),
                 start_time: s.time_info().0 as i64,
                 end_time: s.time_info().1 as i64,
-                refs: Vec::new(),
+                refs: refs_vec,
                 operation_name: s.operation_name().to_owned(),
                 peer: s.peer_info().to_owned(),
                 span_type: span_type,
@@ -129,6 +137,7 @@ impl Reporter {
             };
             spans.push(span);
         }
+
         let segment = SegmentObject {
             trace_id: ctx.trace_id().to_string(),
             trace_segment_id: ctx.segment_id().to_string(),

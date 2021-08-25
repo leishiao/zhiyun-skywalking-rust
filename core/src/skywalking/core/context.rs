@@ -192,7 +192,6 @@ impl Context for TracingContext {
             peer,
             layer,
         );
-
         if injector.is_some() {
             injector.unwrap().inject(
                 String::from("sw8"),

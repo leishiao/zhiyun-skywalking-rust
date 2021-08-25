@@ -142,9 +142,7 @@ impl ContextManager {
     }
 
     pub fn context_exists() -> bool {
-        CTX.try_with(|_ctx| {
-            true
-        }).unwrap_or(false)
+        CTX.try_with(|_ctx| true).unwrap_or(false)
     }
 }
 

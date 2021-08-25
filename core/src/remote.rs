@@ -66,6 +66,41 @@ pub struct SegmentReference {
     #[prost(string, tag = "8")]
     pub network_address_used_at_peer: std::string::String,
 }
+
+impl SegmentReference {
+    pub fn string_to_id(text: &str) -> Option<String> {
+        String::from_utf8(base64::decode(text).ok()?).ok()
+    }
+    pub fn decode_base64_to_string(text: &str) -> Option<String> {
+        String::from_utf8(base64::decode(text).ok()?).ok()
+    }
+
+    pub fn from_text(value: &str) -> Option<SegmentReference> {
+        let strings: Vec<&str> = value.split("-").collect();
+        if strings.len() == 8 {
+            // Ignore string[0].
+            let trace_id = SegmentReference::string_to_id(strings[1])?;
+            let segment_id = SegmentReference::string_to_id(strings[2])?;
+            let span_id = strings[3].parse::<i32>().ok()?;
+            let service_name = SegmentReference::decode_base64_to_string(strings[4])?;
+            let service_instance = SegmentReference::decode_base64_to_string(strings[5])?;
+            let endpoint = SegmentReference::decode_base64_to_string(strings[6])?;
+            let client_address = SegmentReference::decode_base64_to_string(strings[7])?;
+            Some(SegmentReference {
+                ref_type: 1,
+                trace_id,
+                parent_trace_segment_id: segment_id,
+                parent_span_id: span_id,
+                parent_service: service_name,
+                parent_service_instance: service_instance,
+                parent_endpoint: endpoint,
+                network_address_used_at_peer: client_address,
+            })
+        } else {
+            None
+        }
+    }
+}
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SpanObject {
     #[prost(int32, tag = "1")]

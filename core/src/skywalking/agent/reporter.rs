@@ -36,6 +36,7 @@ use tonic::Request;
 
 // batch skywalking segments every REPORT_BUCKET microseconds
 const REPORT_BUCKET: u128 = 500;
+const RECONNECT_SECES: u64 = 30;
 
 lazy_static! {
     static ref GLOBAL_RT: Arc<Runtime> = Arc::new(
@@ -159,9 +160,17 @@ impl Reporter {
             let config = config.clone();
             let mut client = Self::loop_retrive_client(&config).await;
             let mut last_flush_time = Instant::now();
+            let mut last_reconnect_time = Instant::now();
             let mut vec: Vec<Option<Box<TracingContext>>> = Vec::new();
             // 每个经过一个time bucket, 执行一次flush操作
             loop {
+                let now = Instant::now();
+                // reconnect skywalking gRPC service, in order to achieve (fake) load balancing
+                if now.duration_since(last_reconnect_time).as_secs() >= RECONNECT_SECES {
+                    last_reconnect_time = now;
+                    client = Self::loop_retrive_client(&config).await;
+                }
+
                 // 每次等待时间不能超过REPORT_BUCKET
                 if let Ok(ctx) =
                     timeout(Duration::from_millis(REPORT_BUCKET as u64), receiver.recv()).await
